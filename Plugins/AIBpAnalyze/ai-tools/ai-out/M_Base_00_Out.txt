@@ -1,0 +1,278 @@
+================================================================================
+材质深度分析报告
+Material: /Game/SocGame/MateriaLibray/Environments/Mat/M_Base_00
+分析时间: 2026-03-03
+================================================================================
+
+一、材质基本属性
+────────────────
+- 材质域 (Domain)     : Surface（表面材质）
+- 混合模式 (Blend)    : Opaque（不透明）
+- 着色模型 (Shading)  : DefaultLit（默认光照）
+- 双面渲染            : 否
+- 节点总数            : 405 个
+- Texture Sampler 数  : 18 个
+- 材质实例数量         : 50+ 个（覆盖场景建筑、地形、植被、道具等）
+
+================================================================================
+
+二、材质功能概述
+────────────────
+
+M_Base_00 是游戏环境美术资产的核心基础材质，承载了大量通用功能，
+以静态开关（StaticSwitch）区分分支，供 50 余个材质实例复用。
+
+【功能模块一览】
+
+1. 虚拟纹理（Virtual Texture / SVT）管线
+   参数: RunVitualTex, RunVitualTex_Blend, UseSVT, HeightBlendVT, HeightMaskRange
+   纹理: SRMA_VT, BlackColor_VT, VT_D (Diffuse VT), VT_H (Height VT), T_white_d_D_VT
+   功能: 支持运行时虚拟纹理（RVT）与流式虚拟纹理（SVT），并提供与常规纹理路径的切换，
+         通过高度混合实现地形图层的自然衔接。
+
+2. Tri-Planar 三轴投影
+   材质函数: MF_TriPlanar
+   参数: TriPlanarBlend_X, TriPlanarBlend_Z, TriPlanarBlend_Z_Sharpen, Detail_Tex_U/V
+   功能: 对复杂地形几何体进行无缝三轴纹理投影，避免拉伸问题。
+
+3. Texture Bombing（随机纹理打散）
+   材质函数: MF_TextureBombingCheap
+   纹理: T_Voronoi
+   功能: 利用 Voronoi 噪声对纹理进行随机偏移，打破重复感，改善近景表现。
+
+4. Top Layer 顶部图层（草/土堆积）
+   参数: Enable Top Tex, Top_roughness, Top_Spec, Top_Tint, Top_normal_blend,
+         Top Dirt Sharp, Top Dirt Bias
+   功能: 在上表面叠加草地/泥土图层，用于地表和建筑顶部的自然积尘/积草效果。
+   纹理: T_Eve（顶部纹理）
+
+5. Camera Depth Fade（相机深度淡出）
+   材质函数: CameraDepthFade_FP
+   参数: Fade_length, Fade_offset, FadeDistance, FadeBias, Fade_remover
+   功能: 基于摄像机距离对材质进行淡隐，用于 LOD 软切换、草地边缘融合等。
+
+6. 颜色校正
+   材质函数: MF_ColorCorrectionCollection
+   材质参数集: Sky_Parameter
+   参数: World_Brightness, Fog_DistanceBlend
+   功能: 与全局天空参数集联动，进行基于视距的颜色调校，实现昼夜/大气效果。
+
+7. AO 色彩叠加
+   参数: AO_Col, AO_Str
+   功能: 对环境遮蔽区域进行自定义颜色叠加，增强凹陷细节的视觉深度。
+
+8. 自发光（Emissive）
+   参数: Emissive_Tint, Emissive_Brightness
+   功能: 支持自发光效果，可通过静态开关（Emissive_Tint）整体开关。
+
+9. 磨损/侵蚀效果（Abrasion）
+   参数: Abrasion_Tint, Abrasion_Str
+   功能: 在材质边缘或高亮区域叠加磨损色彩，增强表面老化感。
+
+10. 边线描边效果（BianXian / 边线）
+    参数: BianXian_KaiGuan, BianXian_Col, BianXian_DuiBiDu
+    功能: 内置边缘描线效果，用于选中高亮或卡通风格描边。
+
+11. 顶点动画（Vertex Animation）
+    参数: Anim_rotate, Rotate_xyz, Anim_Offset, Offset_xyz,
+          Anim_rotateSine, Anim_RotateSineScale, Anim_OffsetSineScale
+    功能: 支持顶点旋转和偏移动画（含正弦波形），用于植被/旗帜等动态物件。
+
+12. World UV 映射
+    参数: World_U, World_V, World_Scale_U, World_Scale_V, World_Brightness
+    功能: 使用世界空间坐标进行独立 UV 映射，支持大尺度纹理平铺。
+
+13. 细节纹理（Detail Texture）
+    参数: Detail_near_TexSize, Detail_Use_UV, Detail&Diff
+    功能: 近景细节纹理叠加，增强近距离表面精度。
+
+14. Grass 草地混合
+    参数: Grass UV Scale, GrassCellScale
+    功能: 控制草地层的 UV 尺度与 Cell 尺度。
+
+15. 噪波
+    参数: Noise
+    纹理: T_Noise_d_01
+    功能: 通用噪波遮罩，用于材质效果的随机化扰动。
+
+16. HLOD 与烘焙支持
+    参数: BuildHLODMode, Bake（×6 节点）
+    功能: 静态开关切换 HLOD 简化分支和光照烘焙模式，避免动态特性影响烘焙结果。
+
+17. Packed Texture 支持
+    参数: IsPackedTexture（×8）, IsPackedDiffuse（×2）, Diffuse_Tiling_Packed
+    纹理: SRMA（标准通道打包纹理）, T_Base_SVTTex
+    功能: 兼容通道打包纹理格式，提升纹理内存效率。
+
+18. 暗面补光
+    参数: TheDarkSideBright
+    功能: 对法线背光侧进行自定义亮度提升，模拟 subsurface 散射效果。
+
+19. Alpha 混合强度
+    参数: Alpha_Blend_Str
+    功能: 控制材质整体的 Alpha 混合系数。
+
+20. 大型 Actor 优化开关
+    参数: For_BigActor
+    功能: 针对大体量 Actor 启用不同采样/投影策略。
+
+================================================================================
+
+三、优化建议（按优先级排序）
+────────────────────────────
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【P0 — 严重 / 必须修复】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[P0-1] Texture Sampler 数量达到 18 个 — 接近或超出平台限制
+  问题: 多数桌面 GPU 支持 16 个独立采样器，部分 API/移动平台仅 16 个。
+        当前 18 个 sampler 在某些平台必然超限，导致渲染错误或降级。
+  建议:
+    a) 将 T_Noise_d_01 与 T_Voronoi 合并为一张双通道纹理（R=Noise, G=Voronoi）；
+    b) T_Eve（顶部纹理）的 Alpha 通道可复用为 Mask，减少独立遮罩纹理；
+    c) 梳理 VT 路径纹理（SRMA_VT, VT_D, VT_H, BlackColor_VT, T_white_d_D_VT）
+       与非 VT 纹理的共存逻辑，确保同一分支下采样数 ≤ 16。
+
+[P0-2] "Bake" 静态开关参数存在 6 个不同 NodeId 的重复定义
+  问题: 参数 "Bake" 出现在 6 个不同节点（NodeId 各异），说明该参数被多次独立创建
+        而非共享同一参数节点。这会导致：
+          - 实例面板中参数重复显示，行为不可预期；
+          - 静态 switch 排列组合膨胀（原本 1 个 switch 变成 6 个独立 switch）；
+          - 着色器排列数（Permutation）指数级增长。
+  建议: 在材质图中将所有 "Bake" 引用统一连接至同一 StaticBoolParameter 节点，
+        删除冗余实例。同样问题出现在 RunVitualTex_Blend（2 次）和 IsPackedTexture（8 次）。
+
+[P0-3] 指令数统计返回 -1 — 着色器复杂度无法评估
+  问题: instructionCount = -1，通常意味着材质编译失败或节点图过于复杂导致分析超时。
+        405 个节点的超大材质图极易触发此问题。
+  建议:
+    a) 在编辑器中手动强制编译材质，检查输出日志中的实际指令数；
+    b) 若指令数 > 300（PC）或 > 150（移动），需拆分材质或剥离功能到子材质函数。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【P1 — 高优先级 / 强烈建议】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[P1-1] 静态开关（StaticSwitch）数量过多 — 着色器排列爆炸
+  问题: 统计到约 25+ 个静态布尔/开关参数，最坏情况排列数 = 2^25 ≈ 3 千万。
+        即使只有 1% 组合实际使用，也会产生巨大的 Cook 时间和包体膨胀。
+  建议:
+    a) 审计所有 50+ 个材质实例，统计每个静态开关的实际使用分布；
+    b) 将所有实例中恒定为 False/True 的开关固化为常量，删除开关节点；
+    c) 将功能差异大的分支（如 VT vs 非V�、植被动画 vs 静态建筑）拆分为独立子材质，
+       通过材质层（Material Layers）或独立材质管理，而非用一个巨型材质覆盖所有情况。
+
+[P1-2] MF_TextureBombingCheap（纹理打散）性能开销高
+  问题: Texture Bombing 即使是 "Cheap" 版本也需要多次纹理采样和 Voronoi 计算，
+        对 ALU 和带宽压力显著，且在远距离使用效果几乎不可见。
+  建议:
+    a) 通过 CameraDepthFade_FP 的距离参数，将 Texture Bombing 仅在近距离（如 < 5m）启用；
+    b) 添加静态开关 "EnableTextureBombing"，允许移动/低配平台禁用；
+    c) 确认 T_Voronoi 纹理分辨率是否必要，512×512 通常足够，过大浪费采样带宽。
+
+[P1-3] MF_TriPlanar 三轴采样代价 3 倍于普通采样
+  问题: Tri-Planar 对每张纹理进行 X/Y/Z 三方向各一次采样，代价是普通映射的 3 倍。
+  建议:
+    a) 确认 TriPlanar 已通过静态开关保护，For_BigActor 或专用地形材质方可启用；
+    b) 在低精度 LOD 和 HLOD 模式下强制关闭（BuildHLODMode = true 时 bypass）；
+    c) 考虑使用更廉价的 "Bi-Planar" 仅 XZ 两轴方案，多数场景中 Y 方向差异不显著。
+
+[P1-4] IsPackedTexture 参数在 8 个不同节点重复定义
+  问题: 与 "Bake" 类似，IsPackedTexture 出现 8 次（StaticSwitchParameter），
+        IsPackedDiffuse 出现 2 次，导致排列数急剧膨胀。
+  建议: 同 P0-2，统一连接至单一参数节点，删除冗余定义。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【P2 — 中优先级 / 建议改进】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[P2-1] 同时维护 VT 和非 VT 两套纹理路径，资产维护成本高
+  问题: 材质中同时存在 SRMA_VT / VT_D / VT_H（虚拟纹理）和 SRMA / T_Base_Tex /
+        T_Base_N（常规纹理），通过 RunVitualTex 开关切换。双路径需要为每个实例
+        维护两套纹理，且双倍 Sampler 消耗。
+  建议:
+    a) 若项目已全面迁移至 RVT，删除非 VT 路径，减少节点和 Sampler；
+    b) 若仍需兼容，通过材质层将 VT 和非 VT 分离为两个独立基础材质，避免单一材质膨胀。
+
+[P2-2] 顶点动画（Vertex Animation）集成在通用基础材质中
+  问题: Anim_rotate / Anim_Offset / Anim_rotateSine 等参数表明材质内含顶点动画逻辑。
+        对于绝大多数静态建筑和地形资产，VS 中这些计算完全浪费，但仍会消耗 VS 指令。
+  建议:
+    a) 将顶点动画功能拆分到独立的材质层或子类材质（如 M_Base_00_Animated）；
+    b) 确保静态开关 Anim_rotate / Anim_Offset 在所有静态资产实例中默认关闭，
+       并定期审计，防止实例中误开启。
+
+[P2-3] World UV 映射额外 UV 通道计算
+  问题: World_U / World_V / World_Scale_U / World_Scale_V 引入额外的 UV 变换计算，
+        仅在特定大尺度 Actor 上有效。
+  建议: 通过 For_BigActor 静态开关严格保护此路径，确认小型 Prop 实例不触发该分支。
+
+[P2-4] BianXian（边线描边）内嵌于基础材质
+  问题: 描边效果通过逐像素计算实现（常见做法：法线背面检测或 Fresnel），
+        对所有使用该材质的表面均增加 PS 开销，即使未启用描边。
+  建议:
+    a) 若描边仅在选中/互动时激活，考虑改用 Custom Depth + Post Process 方案，
+       与基础材质完全解耦；
+    b) 若保留内嵌方案，确保 BianXian_KaiGuan = false 时静态开关完全裁剪该分支。
+
+[P2-5] TheDarkSideBright 自定义暗面补光与 DefaultLit 重叠
+  问题: DefaultLit 已有完整的 PBR 暗面处理。自定义 TheDarkSideBright 参数在其之上
+        再做亮度修正，可能导致物理不正确的光照表现，且增加 PS 复杂度。
+  建议:
+    a) 若需要次表面散射效果，改用 SubsurfaceProfile 或 Subsurface 着色模型，
+       有专用的物理正确实现；
+    b) 若仅是轻微风格化，评估是否可以通过调整材质 Diffuse 颜色替代，删除此参数。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【P3 — 低优先级 / 长期优化】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[P3-1] Sky_Parameter 材质参数集 CPU 更新开销
+  问题: 50+ 个实例都依赖 Sky_Parameter 参数集。每帧若 Sky_Parameter 有更新，
+        引擎需要向所有实例推送参数，产生 CPU 侧 DrawCall 开销。
+  建议:
+    a) 确认 Sky_Parameter 的更新频率，若仅在时间变化时更新（如 10s 一次），
+       当前方案可接受；
+    b) 若每帧更新，考虑通过 Global Shader Parameter 或 Custom Primitive Data 方案
+       减少参数推送频次。
+
+[P3-2] Fog_DistanceBlend 与引擎雾效重叠
+  问题: UE5 自带 Exponential Height Fog，若已在场景中使用，材质内自定义
+        Fog_DistanceBlend 会产生双重雾效或与引擎雾不一致的表现。
+  建议:
+    a) 审计此参数在各实例中的实际使用场景；
+    b) 若引擎雾满足需求，移除此参数及相关节点，减少 PS 复杂度。
+
+[P3-3] 节点图结构建议模块化重构（长期）
+  问题: 405 个节点集中在单一材质图中，维护困难，难以定位问题，多人协作冲突风险高。
+  建议:
+    a) 将核心功能模块（VT混合、TriPlanar、TextureBombing、顶点动画、描边等）
+       各自封装为独立 MaterialFunction，M_Base_00 仅做编排和参数暴露；
+    b) 长期目标：迁移至 UE5 Material Layer 架构，每个功能层独立管理，
+       通过 Layer Blend 组合，彻底解决排列爆炸问题。
+
+[P3-4] 材质实例规范化
+  问题: 50+ 实例中存在 Developers 目录下的测试实例（Will_Delete 目录）仍引用此材质，
+        增加不必要的实例管理负担。
+  建议:
+    a) 清理 /Game/Developers/ 目录下的废弃测试实例；
+    b) 统一实例命名规范（MI_ 前缀），当前存在 MI_, SL_, MM_ 等多种前缀混用。
+
+================================================================================
+
+四、总结
+────────
+
+M_Base_00 是一个功能极为全面的"超级基础材质"，涵盖了环境美术所需的几乎所有功能。
+但随着功能积累，其复杂度（405节点、18个Sampler、25+静态开关、50+实例）已达到
+可维护性和性能的临界点。
+
+最紧迫的问题是：
+  1. Sampler 超限（P0-1）— 可能已在部分平台造成渲染错误；
+  2. 重复参数节点（P0-2、P1-4）— 造成着色器排列爆炸，急需清理；
+  3. 静态开关排列数过多（P1-1）— 应通过实例审计大幅削减。
+
+中长期建议将材质重构为 Material Layer 架构，从根本上解决排列爆炸和维护成本问题。
+
+================================================================================
