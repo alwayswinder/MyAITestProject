@@ -227,7 +227,7 @@ FMCPResponse FMCPRequestRouter::HandleToolsList(const FMCPRequest& Request)
 		for (const FMCPToolInfo& ToolInfo : ServiceTools)
 		{
 			TSharedPtr<FJsonObject> ToolObj = MakeShared<FJsonObject>();
-			ToolObj->SetStringField(TEXT("name"), FString::Printf(TEXT("%s/%s"), *ServicePair.Key, *ToolInfo.Name));
+			ToolObj->SetStringField(TEXT("name"), FString::Printf(TEXT("%s-%s"), *ServicePair.Key, *ToolInfo.Name));
 			ToolObj->SetStringField(TEXT("description"), ToolInfo.Description);
 			
 			// Add input schema
@@ -267,10 +267,10 @@ FMCPResponse FMCPRequestRouter::HandleToolsCall(const FMCPRequest& Request)
 	FString ToolName = Request.Params->GetStringField(TEXT("name"));
 	TSharedPtr<FJsonObject> Arguments = Request.Params->GetObjectField(TEXT("arguments"));
 	
-	// Split tool name into service/method
+	// Split tool name into service-method (separator is '-' for API compatibility)
 	FString ServicePrefix;
 	FString MethodName;
-	if (!ToolName.Split(TEXT("/"), &ServicePrefix, &MethodName))
+	if (!ToolName.Split(TEXT("-"), &ServicePrefix, &MethodName))
 	{
 		return FMCPResponse::Error(Request.Id, -32602, TEXT("Invalid tool name format"));
 	}
