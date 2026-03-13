@@ -54,7 +54,7 @@ void ASnakePlayerController::MoveLeft()
 {
 	if (Snake)
 	{
-		Snake->ChangeDirection(FVector2D(-1, 0));
+		Snake->ChangeDirection(FVector2D(1, 0));
 	}
 }
 
@@ -62,6 +62,6 @@ void ASnakePlayerController::MoveRight()
 {
 	if (Snake)
 	{
-		Snake->ChangeDirection(FVector2D(1, 0));
+		Snake->ChangeDirection(FVector2D(-1, 0));
 	}
 }

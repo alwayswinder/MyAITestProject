@@ -52,6 +52,10 @@ private:
 	FVector2D CurrentDirection;
 	FTimerHandle MoveTimerHandle;
 	ASnakeManager* SnakeManager;
+	float GridSize;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Snake")
+	UStaticMeshComponent* HeadMesh;
 
 	void MoveSnake();
 	void SpawnInitialSegments();

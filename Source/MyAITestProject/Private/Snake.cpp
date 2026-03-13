@@ -14,8 +14,15 @@ ASnake::ASnake()
 	USceneComponent* RootComp = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
 	RootComponent = RootComp;
 
+	// 创建蛇头网格组件
+	HeadMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HeadMesh"));
+	HeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HeadMesh->SetCastShadow(false);
+	HeadMesh->SetupAttachment(RootComponent);
+
 	MoveSpeed = 0.2f;
 	InitialSegmentCount = 3;
+	GridSize = 100.0f; // 默认网格大小
 	
 	// 设置默认边界距离
 	BoundaryDistanceX = 500.0f; // 默认左右各500单位
@@ -40,9 +47,10 @@ void ASnake::GetBoundaryFromManager()
         SnakeManager = Cast<ASnakeManager>(Managers[0]);
         if (SnakeManager)
         {
-            // 从SnakeManager获取边界距离
+            // 从SnakeManager获取边界距离和网格大小
             BoundaryDistanceX = SnakeManager->BoundaryDistanceX;
             BoundaryDistanceY = SnakeManager->BoundaryDistanceY;
+            GridSize = SnakeManager->GridSize;
         }
     }
 }
@@ -84,8 +92,22 @@ void ASnake::EatFood()
 	// 蛇吃到食物后，在尾部添加一个新段
 	if (SnakeSegments.Num() > 0)
 	{
+		// 如果有身体段，在最后一个身体段的位置添加新段
 		ASnakeSegment* TailSegment = SnakeSegments.Last();
 		FVector TailLocation = TailSegment->GetActorLocation();
+
+		ASnakeSegment* NewSegment = GetWorld()->SpawnActor<ASnakeSegment>(SnakeSegmentClass, TailLocation, FRotator::ZeroRotator);
+		if (NewSegment)
+		{
+			SnakeSegments.Add(NewSegment);
+		}
+	}
+	else
+	{
+		// 如果没有身体段，在蛇头后面添加第一个身体段
+		FVector HeadLocation = GetActorLocation();
+		FVector TailLocation = HeadLocation;
+		TailLocation.X -= GridSize;
 
 		ASnakeSegment* NewSegment = GetWorld()->SpawnActor<ASnakeSegment>(SnakeSegmentClass, TailLocation, FRotator::ZeroRotator);
 		if (NewSegment)
@@ -103,27 +125,31 @@ void ASnake::GameOver()
 
 void ASnake::MoveSnake()
 {
-	if (SnakeSegments.Num() == 0)
-	{
-		return;
-	}
+	// 记录当前蛇头位置（Snake actor的位置）
+	FVector OldHeadLocation = GetActorLocation();
+	
+	// 移动蛇头（Snake actor本身）
+	FVector NewHeadLocation = OldHeadLocation;
+	NewHeadLocation.X += CurrentDirection.X * GridSize;
+	NewHeadLocation.Y += CurrentDirection.Y * GridSize;
+	SetActorLocation(NewHeadLocation);
 
-	// 移动蛇头
-	ASnakeSegment* HeadSegment = SnakeSegments[0];
-	FVector NewHeadLocation = HeadSegment->GetActorLocation();
-	NewHeadLocation.X += CurrentDirection.X * 100; // 假设每个段的大小是100单位
-	NewHeadLocation.Y += CurrentDirection.Y * 100;
-
-	// 移动身体段
-	for (int32 i = SnakeSegments.Num() - 1; i > 0; i--)
+	// 移动身体段 - 从后往前移动
+	for (int32 i = SnakeSegments.Num() - 1; i >= 0; i--)
 	{
 		ASnakeSegment* CurrentSegment = SnakeSegments[i];
-		ASnakeSegment* PreviousSegment = SnakeSegments[i - 1];
-		CurrentSegment->SetActorLocation(PreviousSegment->GetActorLocation());
+		if (i == 0)
+		{
+			// 第一个身体段移动到原来的蛇头位置
+			CurrentSegment->SetActorLocation(OldHeadLocation);
+		}
+		else
+		{
+			// 其他身体段移动到前一个段的原位置
+			ASnakeSegment* PreviousSegment = SnakeSegments[i - 1];
+			CurrentSegment->SetActorLocation(PreviousSegment->GetActorLocation());
+		}
 	}
-
-	// 设置新的蛇头位置
-	HeadSegment->SetActorLocation(NewHeadLocation);
 
 	// 检查碰撞
 	CheckCollision();
@@ -134,26 +160,24 @@ void ASnake::SpawnInitialSegments()
 	// 使用Snake的当前位置作为起点
 	FVector SpawnLocation = GetActorLocation();
 
-	for (int32 i = 0; i < InitialSegmentCount; i++)
+	// 只生成身体段，不生成蛇头（蛇头是Snake actor本身）
+	// 从InitialSegmentCount - 1开始，因为蛇头已经是Snake actor
+	for (int32 i = 0; i < InitialSegmentCount - 1; i++)
 	{
+		// 第一个身体段在蛇头后面，然后依次排列
+		SpawnLocation.X -= GridSize;
 		ASnakeSegment* Segment = GetWorld()->SpawnActor<ASnakeSegment>(SnakeSegmentClass, SpawnLocation, FRotator::ZeroRotator);
 		if (Segment)
 		{
 			SnakeSegments.Add(Segment);
-			SpawnLocation.X -= 100; // 每个段间隔100单位
 		}
 	}
 }
 
 void ASnake::CheckCollision()
 {
-	if (SnakeSegments.Num() == 0)
-	{
-		return;
-	}
-
-	ASnakeSegment* HeadSegment = SnakeSegments[0];
-	FVector HeadLocation = HeadSegment->GetActorLocation();
+	// 使用Snake actor的位置作为蛇头位置
+	FVector HeadLocation = GetActorLocation();
 
 	// 计算实际边界
 	float MinX, MaxX, MinY, MaxY;
@@ -188,10 +212,10 @@ void ASnake::CheckCollision()
 	}
 
 	// 检查自身碰撞
-	for (int32 i = 1; i < SnakeSegments.Num(); i++)
+	for (int32 i = 0; i < SnakeSegments.Num(); i++)
 	{
 		ASnakeSegment* Segment = SnakeSegments[i];
-		if (HeadLocation.Equals(Segment->GetActorLocation(), 10))
+		if (HeadLocation.Equals(Segment->GetActorLocation(), GridSize * 0.1f))
 		{
 			GameOver();
 			if (SnakeManager)

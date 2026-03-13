@@ -27,6 +27,7 @@ private:
 	UStaticMeshComponent* MeshComponent;
 
 	ASnakeManager* SnakeManager;
+	float GridSize;
 
 	void SpawnAtRandomLocation();
 	void InitializeMesh();

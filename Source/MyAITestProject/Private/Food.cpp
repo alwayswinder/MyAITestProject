@@ -17,6 +17,8 @@ AFood::AFood()
 	// 设置碰撞属性
 	MeshComponent->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
 	MeshComponent->OnComponentBeginOverlap.AddDynamic(this, &AFood::OnBeginOverlap);
+
+	GridSize = 100.0f; // 默认网格大小
 }
 
 void AFood::BeginPlay()
@@ -36,15 +38,17 @@ void AFood::FindSnakeManager()
 	if (Managers.Num() > 0)
 	{
 		SnakeManager = Cast<ASnakeManager>(Managers[0]);
+		if (SnakeManager)
+		{
+			GridSize = SnakeManager->GridSize;
+		}
 	}
 }
 
 void AFood::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-	// 检查是否与蛇头碰撞
-	// 这里需要根据实际的蛇头类进行调整
-	// 暂时假设蛇头也是ASnakeSegment类型
-	ASnake* Snake = Cast<ASnake>(OtherActor->GetParentActor());
+	// 检查是否与蛇头碰撞（蛇头是Snake actor本身）
+	ASnake* Snake = Cast<ASnake>(OtherActor);
 	if (Snake)
 	{
 		// 蛇吃到食物
@@ -64,7 +68,7 @@ void AFood::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* Oth
 void AFood::SpawnAtRandomLocation()
 {
 	// 生成随机位置
-	float X, Y;
+	float X, Y, Z = 0;
 	
 	if (SnakeManager)
 	{
@@ -78,19 +82,21 @@ void AFood::SpawnAtRandomLocation()
 		// 生成随机位置
 		X = FMath::FRandRange(MinX, MaxX);
 		Y = FMath::FRandRange(MinY, MaxY);
+		Z = ManagerLocation.Z;
 	}
 	else
 	{
 		// 默认边界
 		X = FMath::FRandRange(-400.0f, 400.0f);
 		Y = FMath::FRandRange(-400.0f, 400.0f);
+		Z = 0;
 	}
 
-	// 确保位置是100的倍数，与蛇段对齐
-	X = FMath::RoundToFloat(X / 100.0f) * 100.0f;
-	Y = FMath::RoundToFloat(Y / 100.0f) * 100.0f;
+	// 确保位置是GridSize的倍数，与蛇段对齐
+	X = FMath::RoundToFloat(X / GridSize) * GridSize;
+	Y = FMath::RoundToFloat(Y / GridSize) * GridSize;
 
-	SetActorLocation(FVector(X, Y, 0));
+	SetActorLocation(FVector(X, Y, Z));
 }
 
 void AFood::InitializeMesh()

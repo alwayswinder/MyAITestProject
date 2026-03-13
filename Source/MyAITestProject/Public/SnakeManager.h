@@ -32,6 +32,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game")
 	int32 FoodScoreValue;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game")
+	float GridSize;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Snake")
 	TSubclassOf<ASnake> SnakeClass;
 
@@ -46,6 +49,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 
 public:
 	UFUNCTION(BlueprintCallable, CallInEditor)
