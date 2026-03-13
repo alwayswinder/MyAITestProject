@@ -33,7 +33,6 @@ void ASnake::BeginPlay()
 {
     Super::BeginPlay();
     GetBoundaryFromManager();
-    StartGame();
 }
 
 void ASnake::GetBoundaryFromManager()

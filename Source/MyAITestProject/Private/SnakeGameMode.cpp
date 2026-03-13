@@ -2,11 +2,15 @@
 
 #include "SnakeGameMode.h"
 #include "SnakePlayerController.h"
+#include "SnakeHUD.h"
 
 ASnakeGameMode::ASnakeGameMode()
 {
 	// 设置默认的PlayerController类
 	PlayerControllerClass = ASnakePlayerController::StaticClass();
+	
+	// 设置默认的HUD类
+	HUDClass = ASnakeHUD::StaticClass();
 }
 
 void ASnakeGameMode::BeginPlay()

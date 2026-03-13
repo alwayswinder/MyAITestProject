@@ -8,6 +8,8 @@
 
 class ASnake;
 class AFood;
+class ASnakeHUD;
+class USnakeUI;
 
 UCLASS()
 class MYAITESTPROJECT_API ASnakeManager : public AActor
@@ -54,6 +56,9 @@ protected:
 public:
 	UFUNCTION(BlueprintCallable, CallInEditor)
 	void UpdateBoundaryMesh();
+	
+	UFUNCTION(BlueprintCallable, CallInEditor)
+	void UpdateCameraDistance();
 
 private:
 	ASnake* Snake;
@@ -61,8 +66,17 @@ private:
 	
 	UPROPERTY(VisibleAnywhere, Category = "Game Boundary")
 	UStaticMeshComponent* BoundaryMesh;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Camera")
+	class UCameraComponent* CameraComponent;
+	
+	UPROPERTY(VisibleAnywhere, Category = "Camera")
+	class USpringArmComponent* SpringArmComponent;
 
 	void InitializeGame();
 	void SpawnSnake();
 	void SpawnFood();
+	
+	UFUNCTION()
+	void DelayedShowGameOverUI();
 };

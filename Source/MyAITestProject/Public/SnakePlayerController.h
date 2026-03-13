@@ -15,6 +15,9 @@ class MYAITESTPROJECT_API ASnakePlayerController : public APlayerController
 
 public:
 	ASnakePlayerController();
+	
+	UFUNCTION(BlueprintCallable, Category = "Snake")
+	void SetSnake(ASnake* NewSnake);
 
 protected:
 	virtual void BeginPlay() override;

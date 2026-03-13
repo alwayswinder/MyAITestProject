@@ -7,20 +7,17 @@
 ASnakePlayerController::ASnakePlayerController()
 {
 	// 设置默认属性
+	Snake = nullptr;
 }
 
 void ASnakePlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+}
 
-	// 找到场景中的蛇对象
-	TArray<AActor*> Snakes;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASnake::StaticClass(), Snakes);
-
-	if (Snakes.Num() > 0)
-	{
-		Snake = Cast<ASnake>(Snakes[0]);
-	}
+void ASnakePlayerController::SetSnake(ASnake* NewSnake)
+{
+	Snake = NewSnake;
 }
 
 void ASnakePlayerController::SetupInputComponent()
