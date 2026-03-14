@@ -8,7 +8,7 @@
 
 AFood::AFood()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	// 创建网格组件
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
@@ -19,6 +19,10 @@ AFood::AFood()
 	MeshComponent->OnComponentBeginOverlap.AddDynamic(this, &AFood::OnBeginOverlap);
 
 	GridSize = 100.0f; // 默认网格大小
+	bIsCollecting = false;
+	AnimationTimer = 0.0f;
+	AnimationDuration = 0.5f;
+	BounceHeight = 150.0f;
 }
 
 void AFood::BeginPlay()
@@ -27,6 +31,16 @@ void AFood::BeginPlay()
 	FindSnakeManager();
 	InitializeMesh();
 	SpawnAtRandomLocation();
+}
+
+void AFood::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (bIsCollecting)
+	{
+		UpdateCollectAnimation(DeltaTime);
+	}
 }
 
 void AFood::FindSnakeManager()
@@ -49,54 +63,78 @@ void AFood::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* Oth
 {
 	// 检查是否与蛇头碰撞（蛇头是Snake actor本身）
 	ASnake* Snake = Cast<ASnake>(OtherActor);
-	if (Snake)
+	if (Snake && !bIsCollecting)
 	{
 		// 蛇吃到食物
 		Snake->EatFood();
-
-		// 重新生成食物
-		SpawnAtRandomLocation();
 
 		// 更新分数
 		if (SnakeManager)
 		{
 			SnakeManager->Score += SnakeManager->FoodScoreValue;
 		}
+
+		// 开始收集动画
+		StartCollectAnimation();
+	}
+}
+
+void AFood::StartCollectAnimation()
+{
+	bIsCollecting = true;
+	AnimationTimer = 0.0f;
+	InitialLocation = GetActorLocation();
+	InitialScale = GetActorScale3D();
+
+	// 禁用碰撞
+	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+}
+
+void AFood::UpdateCollectAnimation(float DeltaTime)
+{
+	AnimationTimer += DeltaTime;
+	float AnimationProgress = FMath::Clamp(AnimationTimer / AnimationDuration, 0.0f, 1.0f);
+
+	// 弹跳效果（使用正弦函数）
+	float BounceProgress = FMath::Sin(AnimationProgress * PI);
+	float CurrentHeight = BounceHeight * BounceProgress;
+
+	// 缩小效果（线性缩小到0）
+	float ScaleProgress = 1.0f - AnimationProgress;
+	FVector CurrentScale = InitialScale * ScaleProgress;
+
+	// 应用变换
+	FVector NewLocation = InitialLocation;
+	NewLocation.Z += CurrentHeight;
+	SetActorLocation(NewLocation);
+	SetActorScale3D(CurrentScale);
+
+	// 动画结束
+	if (AnimationProgress >= 1.0f)
+	{
+		bIsCollecting = false;
+		// 重新生成食物
+		SpawnAtRandomLocation();
+		// 重置变换
+		SetActorScale3D(InitialScale);
+		// 重新启用碰撞
+		MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		
+		// 生成障碍物
+		if (SnakeManager)
+		{
+			SnakeManager->SpawnObstacle();
+		}
 	}
 }
 
 void AFood::SpawnAtRandomLocation()
 {
-	// 生成随机位置
-	float X, Y, Z = 0;
-	
 	if (SnakeManager)
 	{
-		// 使用SnakeManager的位置和边界距离计算边界
-		FVector ManagerLocation = SnakeManager->GetActorLocation();
-		float MinX = ManagerLocation.X - SnakeManager->BoundaryDistanceX;
-		float MaxX = ManagerLocation.X + SnakeManager->BoundaryDistanceX;
-		float MinY = ManagerLocation.Y - SnakeManager->BoundaryDistanceY;
-		float MaxY = ManagerLocation.Y + SnakeManager->BoundaryDistanceY;
-		
-		// 生成随机位置
-		X = FMath::FRandRange(MinX, MaxX);
-		Y = FMath::FRandRange(MinY, MaxY);
-		Z = ManagerLocation.Z;
+		FVector SpawnLocation = SnakeManager->GetRandomValidPosition();
+		SetActorLocation(SpawnLocation);
 	}
-	else
-	{
-		// 默认边界
-		X = FMath::FRandRange(-400.0f, 400.0f);
-		Y = FMath::FRandRange(-400.0f, 400.0f);
-		Z = 0;
-	}
-
-	// 确保位置是GridSize的倍数，与蛇段对齐
-	X = FMath::RoundToFloat(X / GridSize) * GridSize;
-	Y = FMath::RoundToFloat(Y / GridSize) * GridSize;
-
-	SetActorLocation(FVector(X, Y, Z));
 }
 
 void AFood::InitializeMesh()

@@ -3,6 +3,7 @@
 #include "Snake.h"
 #include "SnakeSegment.h"
 #include "SnakeManager.h"
+#include "SnakeObstacle.h"
 #include "Kismet/GameplayStatics.h"
 
 ASnake::ASnake()
@@ -269,6 +270,22 @@ void ASnake::CheckCollision()
 			return;
 		}
 	}
+
+	// 检查障碍物碰撞
+	TArray<AActor*> Obstacles;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASnakeObstacle::StaticClass(), Obstacles);
+	for (AActor* Obstacle : Obstacles)
+	{
+		if (HeadLocation.Equals(Obstacle->GetActorLocation(), GridSize * 0.1f))
+		{
+			GameOver();
+			if (SnakeManager)
+			{
+				SnakeManager->GameOver();
+			}
+			return;
+		}
+	}
 }
 
 void ASnake::StartBoost()
@@ -299,4 +316,27 @@ void ASnake::StopBoost()
 			GetWorldTimerManager().SetTimer(MoveTimerHandle, this, &ASnake::MoveSnake, CurrentMoveSpeed, true);
 		}
 	}
+}
+
+bool ASnake::IsPositionOccupiedBySnake(FVector Position, float Tolerance)
+{
+	FVector HeadLocation = GetActorLocation();
+	if (FVector::Dist(Position, HeadLocation) < Tolerance)
+	{
+		return true;
+	}
+
+	for (ASnakeSegment* Segment : SnakeSegments)
+	{
+		if (Segment)
+		{
+			FVector SegmentLocation = Segment->GetActorLocation();
+			if (FVector::Dist(Position, SegmentLocation) < Tolerance)
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
 }

@@ -21,6 +21,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaTime) override;
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Food")
@@ -32,4 +33,14 @@ private:
 	void SpawnAtRandomLocation();
 	void InitializeMesh();
 	void FindSnakeManager();
+
+	void StartCollectAnimation();
+	void UpdateCollectAnimation(float DeltaTime);
+
+	bool bIsCollecting;
+	float AnimationTimer;
+	float AnimationDuration;
+	float BounceHeight;
+	FVector InitialLocation;
+	FVector InitialScale;
 };

@@ -35,6 +35,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Snake")
 	void StopBoost();
 
+	UFUNCTION(BlueprintCallable, Category = "Snake")
+	bool IsPositionOccupiedBySnake(FVector Position, float Tolerance);
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Snake")
 	float MoveSpeed;
 

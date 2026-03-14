@@ -2,6 +2,7 @@
 
 #include "SnakeManager.h"
 #include "Food.h"
+#include "SnakeObstacle.h"
 #include "Kismet/GameplayStatics.h"
 #include "Snake.h"
 #include "SnakePlayerController.h"
@@ -93,11 +94,11 @@ void ASnakeManager::InitializeGame() {
 }
 
 void ASnakeManager::StartGame() {
-  // 生成Snake和Food
+  ClearObstacles();
+  
   SpawnSnake();
   SpawnFood();
   
-  // 显示游戏UI
   APlayerController* PlayerController = UGameplayStatics::GetPlayerController(GetWorld(), 0);
   if (PlayerController)
   {
@@ -172,11 +173,9 @@ void ASnakeManager::DelayedShowGameOverUI()
     }
   }
   
-  // 重置游戏状态，准备重新开始
   Score = 0;
   bGameOver = false;
   
-  // 销毁旧的Snake和Food
   if (Snake)
   {
     Snake->Destroy();
@@ -187,6 +186,7 @@ void ASnakeManager::DelayedShowGameOverUI()
     Food->Destroy();
     Food = nullptr;
   }
+  ClearObstacles();
 }
 
 void ASnakeManager::SpawnSnake() {
@@ -214,8 +214,80 @@ void ASnakeManager::SpawnSnake() {
 
 void ASnakeManager::SpawnFood() {
   if (FoodClass) {
-    // 只生成Food actor，位置由Food自己处理
-    Food = GetWorld()->SpawnActor<AFood>(FoodClass, GetActorLocation(),
-                                         FRotator::ZeroRotator);
+    FVector SpawnLocation = GetRandomValidPosition();
+    Food = GetWorld()->SpawnActor<AFood>(FoodClass, SpawnLocation, FRotator::ZeroRotator);
   }
+}
+
+void ASnakeManager::SpawnObstacle() {
+  if (ObstacleClass) {
+    FVector SpawnLocation = GetRandomValidPosition();
+    ASnakeObstacle* NewObstacle = GetWorld()->SpawnActor<ASnakeObstacle>(ObstacleClass, SpawnLocation, FRotator::ZeroRotator);
+    if (NewObstacle) {
+      Obstacles.Add(NewObstacle);
+    }
+  }
+}
+
+void ASnakeManager::ClearObstacles() {
+  for (ASnakeObstacle* Obstacle : Obstacles) {
+    if (Obstacle && Obstacle->IsValidLowLevel()) {
+      Obstacle->Destroy();
+    }
+  }
+  Obstacles.Empty();
+}
+
+bool ASnakeManager::IsPositionOccupied(FVector Position) {
+  const float Tolerance = GridSize * 0.5f;
+
+  if (Food) {
+    FVector FoodLocation = Food->GetActorLocation();
+    if (FVector::Dist(Position, FoodLocation) < Tolerance) {
+      return true;
+    }
+  }
+
+  if (Snake) {
+    if (Snake->IsPositionOccupiedBySnake(Position, Tolerance)) {
+      return true;
+    }
+  }
+
+  for (ASnakeObstacle* Obstacle : Obstacles) {
+    if (Obstacle) {
+      FVector ObstacleLocation = Obstacle->GetActorLocation();
+      if (FVector::Dist(Position, ObstacleLocation) < Tolerance) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+FVector ASnakeManager::GetRandomValidPosition() {
+  FVector ManagerLocation = GetActorLocation();
+  float MinX = ManagerLocation.X - BoundaryDistanceX;
+  float MaxX = ManagerLocation.X + BoundaryDistanceX;
+  float MinY = ManagerLocation.Y - BoundaryDistanceY;
+  float MaxY = ManagerLocation.Y + BoundaryDistanceY;
+
+  const int32 MaxAttempts = 100;
+  for (int32 i = 0; i < MaxAttempts; ++i) {
+    float X = FMath::FRandRange(MinX, MaxX);
+    float Y = FMath::FRandRange(MinY, MaxY);
+    float Z = ManagerLocation.Z;
+
+    X = FMath::RoundToFloat(X / GridSize) * GridSize;
+    Y = FMath::RoundToFloat(Y / GridSize) * GridSize;
+
+    FVector CandidatePosition(X, Y, Z);
+
+    if (!IsPositionOccupied(CandidatePosition)) {
+      return CandidatePosition;
+    }
+  }
+
+  return ManagerLocation;
 }

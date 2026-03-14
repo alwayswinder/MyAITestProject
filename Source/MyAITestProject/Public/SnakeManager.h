@@ -8,6 +8,7 @@
 
 class ASnake;
 class AFood;
+class ASnakeObstacle;
 class ASnakeHUD;
 class USnakeUI;
 
@@ -43,6 +44,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Food")
 	TSubclassOf<AFood> FoodClass;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Obstacle")
+	TSubclassOf<ASnakeObstacle> ObstacleClass;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Game Boundary", meta=(OnChanged="UpdateBoundaryMesh"))
 	float BoundaryDistanceX;
 
@@ -60,9 +64,19 @@ public:
 	UFUNCTION(BlueprintCallable, CallInEditor)
 	void UpdateCameraDistance();
 
+	UFUNCTION(BlueprintCallable)
+	void SpawnObstacle();
+
+	UFUNCTION(BlueprintCallable)
+	bool IsPositionOccupied(FVector Position);
+
+	UFUNCTION(BlueprintCallable)
+	FVector GetRandomValidPosition();
+
 private:
 	ASnake* Snake;
 	AFood* Food;
+	TArray<ASnakeObstacle*> Obstacles;
 	
 	UPROPERTY(VisibleAnywhere, Category = "Game Boundary")
 	UStaticMeshComponent* BoundaryMesh;
@@ -76,6 +90,7 @@ private:
 	void InitializeGame();
 	void SpawnSnake();
 	void SpawnFood();
+	void ClearObstacles();
 	
 	UFUNCTION()
 	void DelayedShowGameOverUI();
