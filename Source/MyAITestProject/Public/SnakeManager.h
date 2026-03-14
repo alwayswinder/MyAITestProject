@@ -11,6 +11,7 @@ class AFood;
 class ASnakeObstacle;
 class ASnakeHUD;
 class USnakeUI;
+class USnakeSaveGame;
 
 UCLASS()
 class MYAITESTPROJECT_API ASnakeManager : public AActor
@@ -72,6 +73,12 @@ public:
 
 	UFUNCTION(BlueprintCallable)
 	FVector GetRandomValidPosition();
+
+	UFUNCTION(BlueprintCallable, Category = "SaveGame")
+	void SaveHighScore(int32 NewScore);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SaveGame")
+	TArray<int32> GetHighScores();
 
 private:
 	ASnake* Snake;

@@ -33,6 +33,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Game")
 	int32 GetScore();
 
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Game")
+	TArray<int32> GetHighScores();
+
 private:
 	UPROPERTY(meta = (BindWidget))
 	UButton* StartGameButton;

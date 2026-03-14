@@ -99,3 +99,13 @@ int32 USnakeMenuUI::GetScore()
 	}
 	return 0;
 }
+
+TArray<int32> USnakeMenuUI::GetHighScores()
+{
+	ASnakeManager* SnakeManager = FindSnakeManager();
+	if (SnakeManager)
+	{
+		return SnakeManager->GetHighScores();
+	}
+	return TArray<int32>();
+}

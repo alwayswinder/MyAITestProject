@@ -3,6 +3,7 @@
 #include "SnakeManager.h"
 #include "Food.h"
 #include "SnakeObstacle.h"
+#include "SnakeSaveGame.h"
 #include "Kismet/GameplayStatics.h"
 #include "Snake.h"
 #include "SnakePlayerController.h"
@@ -123,6 +124,9 @@ void ASnakeManager::StartGame() {
 
 void ASnakeManager::GameOver() {
   bGameOver = true;
+  
+  SaveHighScore(Score);
+  
   if (Snake) {
     Snake->GameOver();
   }
@@ -286,4 +290,44 @@ FVector ASnakeManager::GetRandomValidPosition() {
   }
 
   return ManagerLocation;
+}
+
+void ASnakeManager::SaveHighScore(int32 NewScore)
+{
+  FString SaveSlotName = TEXT("SnakeHighScores");
+  const int32 MaxHighScores = 10;
+
+  USnakeSaveGame* SaveGameInstance = Cast<USnakeSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlotName, 0));
+  if (!SaveGameInstance)
+  {
+    SaveGameInstance = Cast<USnakeSaveGame>(UGameplayStatics::CreateSaveGameObject(USnakeSaveGame::StaticClass()));
+  }
+
+  if (SaveGameInstance)
+  {
+    SaveGameInstance->HighScores.Add(NewScore);
+    SaveGameInstance->HighScores.Sort([](int32 A, int32 B) {
+      return A > B;
+    });
+
+    while (SaveGameInstance->HighScores.Num() > MaxHighScores)
+    {
+      SaveGameInstance->HighScores.Pop();
+    }
+
+    UGameplayStatics::SaveGameToSlot(SaveGameInstance, SaveSlotName, 0);
+  }
+}
+
+TArray<int32> ASnakeManager::GetHighScores()
+{
+  FString SaveSlotName = TEXT("SnakeHighScores");
+
+  USnakeSaveGame* SaveGameInstance = Cast<USnakeSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlotName, 0));
+  if (SaveGameInstance)
+  {
+    return SaveGameInstance->HighScores;
+  }
+
+  return TArray<int32>();
 }
