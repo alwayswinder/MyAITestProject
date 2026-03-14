@@ -82,9 +82,6 @@ void ASnakeManager::BeginPlay() {
 }
 
 void ASnakeManager::InitializeGame() {
-  Score = 0;
-  bGameOver = false;
-  
   // 切换Viewport到Manager的Camera
   APlayerController* PlayerController = UGameplayStatics::GetPlayerController(GetWorld(), 0);
   if (PlayerController && CameraComponent)
@@ -94,6 +91,8 @@ void ASnakeManager::InitializeGame() {
 }
 
 void ASnakeManager::StartGame() {
+  Score = 0;
+  bGameOver = false;
   ClearObstacles();
   
   SpawnSnake();
@@ -172,9 +171,6 @@ void ASnakeManager::DelayedShowGameOverUI()
       }
     }
   }
-  
-  Score = 0;
-  bGameOver = false;
   
   if (Snake)
   {

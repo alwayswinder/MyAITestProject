@@ -89,3 +89,13 @@ ASnakeManager* USnakeMenuUI::FindSnakeManager()
 	}
 	return nullptr;
 }
+
+int32 USnakeMenuUI::GetScore()
+{
+	ASnakeManager* SnakeManager = FindSnakeManager();
+	if (SnakeManager)
+	{
+		return SnakeManager->Score;
+	}
+	return 0;
+}

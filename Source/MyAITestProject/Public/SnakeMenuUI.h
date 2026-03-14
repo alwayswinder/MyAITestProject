@@ -30,6 +30,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void ShowUI(bool bInIsGameOver = false);
 
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Game")
+	int32 GetScore();
+
 private:
 	UPROPERTY(meta = (BindWidget))
 	UButton* StartGameButton;
