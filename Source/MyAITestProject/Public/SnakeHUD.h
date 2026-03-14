@@ -6,7 +6,8 @@
 #include "GameFramework/HUD.h"
 #include "SnakeHUD.generated.h"
 
-class USnakeUI;
+class USnakeMenuUI;
+class USnakeGameUI;
 
 UCLASS()
 class MYAITESTPROJECT_API ASnakeHUD : public AHUD
@@ -21,12 +22,21 @@ protected:
 
 private:
 	UPROPERTY()
-	USnakeUI* SnakeUIWidget;
+	USnakeMenuUI* SnakeMenuUIWidget;
+
+	UPROPERTY()
+	USnakeGameUI* SnakeGameUIWidget;
 
 	UPROPERTY(EditAnywhere, Category = "UI")
-	TSubclassOf<USnakeUI> SnakeUIClass;
+	TSubclassOf<USnakeMenuUI> SnakeMenuUIClass;
+
+	UPROPERTY(EditAnywhere, Category = "UI")
+	TSubclassOf<USnakeGameUI> SnakeGameUIClass;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "UI")
-	USnakeUI* GetSnakeUI() const { return SnakeUIWidget; }
+	USnakeMenuUI* GetSnakeMenuUI() const { return SnakeMenuUIWidget; }
+	
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	USnakeGameUI* GetSnakeGameUI() const { return SnakeGameUIWidget; }
 };

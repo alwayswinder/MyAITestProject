@@ -1,7 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "SnakeHUD.h"
-#include "SnakeUI.h"
+#include "SnakeMenuUI.h"
+#include "SnakeGameUI.h"
 
 ASnakeHUD::ASnakeHUD()
 {
@@ -11,12 +12,17 @@ void ASnakeHUD::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (SnakeUIClass)
+	if (SnakeMenuUIClass)
 	{
-		SnakeUIWidget = CreateWidget<USnakeUI>(GetWorld(), SnakeUIClass);
-		if (SnakeUIWidget)
+		SnakeMenuUIWidget = CreateWidget<USnakeMenuUI>(GetWorld(), SnakeMenuUIClass);
+		if (SnakeMenuUIWidget)
 		{
-			SnakeUIWidget->AddToViewport();
+			SnakeMenuUIWidget->AddToViewport();
 		}
+	}
+	
+	if (SnakeGameUIClass)
+	{
+		SnakeGameUIWidget = CreateWidget<USnakeGameUI>(GetWorld(), SnakeGameUIClass);
 	}
 }

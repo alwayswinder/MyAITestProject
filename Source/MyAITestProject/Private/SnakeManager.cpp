@@ -6,7 +6,8 @@
 #include "Snake.h"
 #include "SnakePlayerController.h"
 #include "SnakeHUD.h"
-#include "SnakeUI.h"
+#include "SnakeMenuUI.h"
+#include "SnakeGameUI.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 
@@ -96,6 +97,25 @@ void ASnakeManager::StartGame() {
   SpawnSnake();
   SpawnFood();
   
+  // 显示游戏UI
+  APlayerController* PlayerController = UGameplayStatics::GetPlayerController(GetWorld(), 0);
+  if (PlayerController)
+  {
+    AHUD* HUD = PlayerController->GetHUD();
+    if (HUD)
+    {
+      ASnakeHUD* SnakeHUD = Cast<ASnakeHUD>(HUD);
+      if (SnakeHUD)
+      {
+        USnakeGameUI* GameUI = SnakeHUD->GetSnakeGameUI();
+        if (GameUI)
+        {
+          GameUI->ShowUI();
+        }
+      }
+    }
+  }
+  
   if (Snake) {
     Snake->StartGame();
   }
@@ -105,6 +125,25 @@ void ASnakeManager::GameOver() {
   bGameOver = true;
   if (Snake) {
     Snake->GameOver();
+  }
+  
+  // 隐藏游戏UI
+  APlayerController* PlayerController = UGameplayStatics::GetPlayerController(GetWorld(), 0);
+  if (PlayerController)
+  {
+    AHUD* HUD = PlayerController->GetHUD();
+    if (HUD)
+    {
+      ASnakeHUD* SnakeHUD = Cast<ASnakeHUD>(HUD);
+      if (SnakeHUD)
+      {
+        USnakeGameUI* GameUI = SnakeHUD->GetSnakeGameUI();
+        if (GameUI)
+        {
+          GameUI->HideUI();
+        }
+      }
+    }
   }
   
   // 延迟一帧显示UI，确保一切都稳定了
@@ -124,7 +163,7 @@ void ASnakeManager::DelayedShowGameOverUI()
       ASnakeHUD* SnakeHUD = Cast<ASnakeHUD>(HUD);
       if (SnakeHUD)
       {
-        USnakeUI* UI = SnakeHUD->GetSnakeUI();
+        USnakeMenuUI* UI = SnakeHUD->GetSnakeMenuUI();
         if (UI)
         {
           UI->ShowUI(true);

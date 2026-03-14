@@ -69,6 +69,9 @@ void ASnake::StartGame()
 
 	// 初始化方向
 	CurrentDirection = FVector2D(1, 0); // 初始向右移动
+	
+	// 设置初始朝向
+	SetActorRotation(FRotator::ZeroRotator);
 
 	// 生成初始蛇段
 	SpawnInitialSegments();
@@ -122,10 +125,45 @@ void ASnake::GameOver()
 	GetWorldTimerManager().ClearTimer(MoveTimerHandle);
 }
 
+void ASnake::Destroyed()
+{
+	Super::Destroyed();
+	
+	// 销毁所有蛇段
+	for (ASnakeSegment* Segment : SnakeSegments)
+	{
+		if (Segment)
+		{
+			Segment->Destroy();
+		}
+	}
+	SnakeSegments.Empty();
+}
+
 void ASnake::MoveSnake()
 {
 	// 记录当前蛇头位置（Snake actor的位置）
 	FVector OldHeadLocation = GetActorLocation();
+	
+	// 根据移动方向设置旋转
+	FRotator NewRotation = FRotator::ZeroRotator;
+	if (CurrentDirection.X > 0)
+	{
+		NewRotation.Yaw = 0.0f; // 向右
+	}
+	else if (CurrentDirection.X < 0)
+	{
+		NewRotation.Yaw = 180.0f; // 向左
+	}
+	else if (CurrentDirection.Y > 0)
+	{
+		NewRotation.Yaw = 90.0f; // 向上
+	}
+	else if (CurrentDirection.Y < 0)
+	{
+		NewRotation.Yaw = -90.0f; // 向下
+	}
+	SetActorRotation(NewRotation);
 	
 	// 移动蛇头（Snake actor本身）
 	FVector NewHeadLocation = OldHeadLocation;

@@ -1,25 +1,25 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "SnakeUI.h"
+#include "SnakeMenuUI.h"
 #include "Components/Button.h"
 #include "SnakeManager.h"
 #include "Kismet/GameplayStatics.h"
 
-USnakeUI::USnakeUI(const FObjectInitializer& ObjectInitializer)
+USnakeMenuUI::USnakeMenuUI(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	bIsGameOver = false;
 	bIsButtonBound = false;
 }
 
-void USnakeUI::NativeConstruct()
+void USnakeMenuUI::NativeConstruct()
 {
 	Super::NativeConstruct();
 
 	// 只绑定一次按钮事件
 	if (StartGameButton && !bIsButtonBound)
 	{
-		StartGameButton->OnClicked.AddDynamic(this, &USnakeUI::OnStartGameClicked);
+		StartGameButton->OnClicked.AddDynamic(this, &USnakeMenuUI::OnStartGameClicked);
 		bIsButtonBound = true;
 	}
 	
@@ -32,7 +32,7 @@ void USnakeUI::NativeConstruct()
 	}
 }
 
-void USnakeUI::ShowUI(bool bInIsGameOver)
+void USnakeMenuUI::ShowUI(bool bInIsGameOver)
 {
 	bIsGameOver = bInIsGameOver;
 	
@@ -54,7 +54,7 @@ void USnakeUI::ShowUI(bool bInIsGameOver)
 	}
 }
 
-void USnakeUI::OnStartGameClicked()
+void USnakeMenuUI::OnStartGameClicked()
 {
 	ASnakeManager* SnakeManager = FindSnakeManager();
 	if (SnakeManager)
@@ -65,7 +65,7 @@ void USnakeUI::OnStartGameClicked()
 	RemoveUI();
 }
 
-void USnakeUI::RemoveUI()
+void USnakeMenuUI::RemoveUI()
 {
 	// 隐藏鼠标
 	APlayerController* PlayerController = UGameplayStatics::GetPlayerController(GetWorld(), 0);
@@ -78,7 +78,7 @@ void USnakeUI::RemoveUI()
 	RemoveFromParent();
 }
 
-ASnakeManager* USnakeUI::FindSnakeManager()
+ASnakeManager* USnakeMenuUI::FindSnakeManager()
 {
 	TArray<AActor*> Managers;
 	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASnakeManager::StaticClass(), Managers);

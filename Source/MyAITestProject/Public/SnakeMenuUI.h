@@ -4,13 +4,13 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "SnakeUI.generated.h"
+#include "SnakeMenuUI.generated.h"
 
 class UButton;
 class ASnakeManager;
 
 UCLASS()
-class MYAITESTPROJECT_API USnakeUI : public UUserWidget
+class MYAITESTPROJECT_API USnakeMenuUI : public UUserWidget
 {
 	GENERATED_BODY()
 	
@@ -25,7 +25,7 @@ private:
 	bool bIsButtonBound;
 	
 public:
-	USnakeUI(const FObjectInitializer& ObjectInitializer);
+	USnakeMenuUI(const FObjectInitializer& ObjectInitializer);
 	
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void ShowUI(bool bInIsGameOver = false);
