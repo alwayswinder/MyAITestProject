@@ -21,8 +21,11 @@ ASnake::ASnake()
 	HeadMesh->SetupAttachment(RootComponent);
 
 	MoveSpeed = 0.2f;
+	BoostMoveSpeed = 0.1f; // 默认加速速度
 	InitialSegmentCount = 3;
 	GridSize = 100.0f; // 默认网格大小
+	CurrentMoveSpeed = MoveSpeed;
+	bIsBoosting = false;
 	
 	// 设置默认边界距离
 	BoundaryDistanceX = 500.0f; // 默认左右各500单位
@@ -70,6 +73,10 @@ void ASnake::StartGame()
 	// 初始化方向
 	CurrentDirection = FVector2D(1, 0); // 初始向右移动
 	
+	// 重置加速状态
+	bIsBoosting = false;
+	CurrentMoveSpeed = MoveSpeed;
+	
 	// 设置初始朝向
 	SetActorRotation(FRotator::ZeroRotator);
 
@@ -77,7 +84,7 @@ void ASnake::StartGame()
 	SpawnInitialSegments();
 
 	// 开始移动
-	GetWorldTimerManager().SetTimer(MoveTimerHandle, this, &ASnake::MoveSnake, MoveSpeed, true);
+	GetWorldTimerManager().SetTimer(MoveTimerHandle, this, &ASnake::MoveSnake, CurrentMoveSpeed, true);
 }
 
 void ASnake::ChangeDirection(FVector2D NewDirection)
@@ -260,6 +267,36 @@ void ASnake::CheckCollision()
 				SnakeManager->GameOver();
 			}
 			return;
+		}
+	}
+}
+
+void ASnake::StartBoost()
+{
+	if (!bIsBoosting)
+	{
+		bIsBoosting = true;
+		CurrentMoveSpeed = BoostMoveSpeed;
+		
+		if (GetWorldTimerManager().IsTimerActive(MoveTimerHandle))
+		{
+			GetWorldTimerManager().ClearTimer(MoveTimerHandle);
+			GetWorldTimerManager().SetTimer(MoveTimerHandle, this, &ASnake::MoveSnake, CurrentMoveSpeed, true);
+		}
+	}
+}
+
+void ASnake::StopBoost()
+{
+	if (bIsBoosting)
+	{
+		bIsBoosting = false;
+		CurrentMoveSpeed = MoveSpeed;
+		
+		if (GetWorldTimerManager().IsTimerActive(MoveTimerHandle))
+		{
+			GetWorldTimerManager().ClearTimer(MoveTimerHandle);
+			GetWorldTimerManager().SetTimer(MoveTimerHandle, this, &ASnake::MoveSnake, CurrentMoveSpeed, true);
 		}
 	}
 }

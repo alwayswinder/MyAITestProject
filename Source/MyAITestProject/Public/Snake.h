@@ -29,8 +29,17 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void GameOver();
 
+	UFUNCTION(BlueprintCallable, Category = "Snake")
+	void StartBoost();
+
+	UFUNCTION(BlueprintCallable, Category = "Snake")
+	void StopBoost();
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Snake")
 	float MoveSpeed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Snake")
+	float BoostMoveSpeed;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Snake")
 	TSubclassOf<ASnakeSegment> SnakeSegmentClass;
@@ -54,6 +63,8 @@ private:
 	FTimerHandle MoveTimerHandle;
 	ASnakeManager* SnakeManager;
 	float GridSize;
+	float CurrentMoveSpeed;
+	bool bIsBoosting;
 	
 	UPROPERTY(VisibleAnywhere, Category = "Snake")
 	UStaticMeshComponent* HeadMesh;

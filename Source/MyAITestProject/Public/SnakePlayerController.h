@@ -31,4 +31,14 @@ private:
 	void MoveDown();
 	void MoveLeft();
 	void MoveRight();
+	void OnMoveUpPressed();
+	void OnMoveUpReleased();
+	void OnMoveDownPressed();
+	void OnMoveDownReleased();
+	void OnMoveLeftPressed();
+	void OnMoveLeftReleased();
+	void OnMoveRightPressed();
+	void OnMoveRightReleased();
+	
+	int32 PressedKeyCount;
 };
