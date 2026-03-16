@@ -68,78 +68,61 @@ void ASnakePlayerController::MoveRight()
 	}
 }
 
-void ASnakePlayerController::OnMoveUpPressed()
+void ASnakePlayerController::HandleMovePressed(TFunction<void()> MoveFunc)
 {
-	MoveUp();
+	MoveFunc();
 	PressedKeyCount++;
 	if (Snake && PressedKeyCount == 1)
 	{
 		Snake->StartBoost();
 	}
+}
+
+void ASnakePlayerController::HandleMoveReleased()
+{
+	PressedKeyCount--;
+	if (Snake && PressedKeyCount == 0)
+	{
+		Snake->StopBoost();
+	}
+}
+
+void ASnakePlayerController::OnMoveUpPressed()
+{
+	HandleMovePressed([this]() { MoveUp(); });
 }
 
 void ASnakePlayerController::OnMoveUpReleased()
 {
-	PressedKeyCount--;
-	if (Snake && PressedKeyCount == 0)
-	{
-		Snake->StopBoost();
-	}
+	HandleMoveReleased();
 }
 
 void ASnakePlayerController::OnMoveDownPressed()
 {
-	MoveDown();
-	PressedKeyCount++;
-	if (Snake && PressedKeyCount == 1)
-	{
-		Snake->StartBoost();
-	}
+	HandleMovePressed([this]() { MoveDown(); });
 }
 
 void ASnakePlayerController::OnMoveDownReleased()
 {
-	PressedKeyCount--;
-	if (Snake && PressedKeyCount == 0)
-	{
-		Snake->StopBoost();
-	}
+	HandleMoveReleased();
 }
 
 void ASnakePlayerController::OnMoveLeftPressed()
 {
-	MoveLeft();
-	PressedKeyCount++;
-	if (Snake && PressedKeyCount == 1)
-	{
-		Snake->StartBoost();
-	}
+	HandleMovePressed([this]() { MoveLeft(); });
 }
 
 void ASnakePlayerController::OnMoveLeftReleased()
 {
-	PressedKeyCount--;
-	if (Snake && PressedKeyCount == 0)
-	{
-		Snake->StopBoost();
-	}
+	HandleMoveReleased();
 }
 
 void ASnakePlayerController::OnMoveRightPressed()
 {
-	MoveRight();
-	PressedKeyCount++;
-	if (Snake && PressedKeyCount == 1)
-	{
-		Snake->StartBoost();
-	}
+	HandleMovePressed([this]() { MoveRight(); });
 }
 
 void ASnakePlayerController::OnMoveRightReleased()
 {
-	PressedKeyCount--;
-	if (Snake && PressedKeyCount == 0)
-	{
-		Snake->StopBoost();
-	}
+	HandleMoveReleased();
 }

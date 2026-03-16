@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "Templates/Function.h"
 #include "SnakePlayerController.generated.h"
 
 class ASnake;
@@ -31,6 +32,10 @@ private:
 	void MoveDown();
 	void MoveLeft();
 	void MoveRight();
+	
+	void HandleMovePressed(TFunction<void()> MoveFunc);
+	void HandleMoveReleased();
+	
 	void OnMoveUpPressed();
 	void OnMoveUpReleased();
 	void OnMoveDownPressed();
