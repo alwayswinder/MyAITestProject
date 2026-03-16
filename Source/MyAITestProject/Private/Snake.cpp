@@ -9,7 +9,7 @@
 ASnake::ASnake()
 {
 	// 设置Pawn属性
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	// 创建根组件
 	USceneComponent* RootComp = CreateDefaultSubobject<USceneComponent>(TEXT("RootComponent"));
@@ -17,7 +17,8 @@ ASnake::ASnake()
 
 	// 创建蛇头网格组件
 	HeadMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HeadMesh"));
-	HeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HeadMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	HeadMesh->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
 	HeadMesh->SetCastShadow(false);
 	HeadMesh->SetupAttachment(RootComponent);
 
@@ -27,6 +28,10 @@ ASnake::ASnake()
 	GridSize = 100.0f; // 默认网格大小
 	CurrentMoveSpeed = MoveSpeed;
 	bIsBoosting = false;
+	EffectDuration = 10.0f;
+	bIsInvisible = false;
+	bIsInvincible = false;
+	EffectTimer = 0.0f;
 	
 	// 设置默认边界距离
 	BoundaryDistanceX = 500.0f; // 默认左右各500单位
@@ -37,6 +42,12 @@ void ASnake::BeginPlay()
 {
     Super::BeginPlay();
     GetBoundaryFromManager();
+}
+
+void ASnake::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+	UpdateEffects(DeltaTime);
 }
 
 void ASnake::GetBoundaryFromManager()
@@ -77,6 +88,9 @@ void ASnake::StartGame()
 	// 重置加速状态
 	bIsBoosting = false;
 	CurrentMoveSpeed = MoveSpeed;
+	
+	// 清除效果状态
+	ClearEffects();
 	
 	// 设置初始朝向
 	SetActorRotation(FRotator::ZeroRotator);
@@ -124,6 +138,59 @@ void ASnake::EatFood()
 		{
 			SnakeSegments.Add(NewSegment);
 		}
+	}
+}
+
+void ASnake::ApplyFoodEffect(EFoodType EffectType)
+{
+	switch (EffectType)
+	{
+	case EFoodType::Normal:
+		// 普通食物没有特殊效果
+		break;
+	case EFoodType::Invisible:
+		bIsInvisible = true;
+		bIsInvincible = false;
+		EffectTimer = EffectDuration;
+		OnInvisibleStarted.Broadcast();
+		break;
+	case EFoodType::Invincible:
+		bIsInvincible = true;
+		bIsInvisible = false;
+		EffectTimer = EffectDuration;
+		OnInvincibleStarted.Broadcast();
+		break;
+	}
+}
+
+void ASnake::UpdateEffects(float DeltaTime)
+{
+	if (EffectTimer > 0.0f)
+	{
+		EffectTimer -= DeltaTime;
+		if (EffectTimer <= 0.0f)
+		{
+			ClearEffects();
+		}
+	}
+}
+
+void ASnake::ClearEffects()
+{
+	bool WasInvisible = bIsInvisible;
+	bool WasInvincible = bIsInvincible;
+	
+	bIsInvisible = false;
+	bIsInvincible = false;
+	EffectTimer = 0.0f;
+	
+	if (WasInvisible)
+	{
+		OnInvisibleEnded.Broadcast();
+	}
+	if (WasInvincible)
+	{
+		OnInvincibleEnded.Broadcast();
 	}
 }
 
@@ -245,7 +312,7 @@ void ASnake::CheckCollision()
 		MaxY = SnakeLocation.Y + BoundaryDistanceY;
 	}
 
-	// 检查边界碰撞
+	// 检查边界碰撞 - 任何状态下都检查
 	if (HeadLocation.X < MinX || HeadLocation.X > MaxX || HeadLocation.Y < MinY || HeadLocation.Y > MaxY)
 	{
 		GameOver();
@@ -256,18 +323,21 @@ void ASnake::CheckCollision()
 		return;
 	}
 
-	// 检查自身碰撞
-	for (int32 i = 0; i < SnakeSegments.Num(); i++)
+	// 检查自身碰撞 - 隐身状态下不检查自身碰撞
+	if (!bIsInvisible)
 	{
-		ASnakeSegment* Segment = SnakeSegments[i];
-		if (HeadLocation.Equals(Segment->GetActorLocation(), GridSize * 0.1f))
+		for (int32 i = 0; i < SnakeSegments.Num(); i++)
 		{
-			GameOver();
-			if (SnakeManager)
+			ASnakeSegment* Segment = SnakeSegments[i];
+			if (HeadLocation.Equals(Segment->GetActorLocation(), GridSize * 0.1f))
 			{
-				SnakeManager->GameOver();
+				GameOver();
+				if (SnakeManager)
+				{
+					SnakeManager->GameOver();
+				}
+				return;
 			}
-			return;
 		}
 	}
 
@@ -278,12 +348,21 @@ void ASnake::CheckCollision()
 	{
 		if (HeadLocation.Equals(Obstacle->GetActorLocation(), GridSize * 0.1f))
 		{
-			GameOver();
-			if (SnakeManager)
+			if (bIsInvincible)
 			{
-				SnakeManager->GameOver();
+				// 无敌状态下摧毁障碍物
+				Obstacle->Destroy();
 			}
-			return;
+			else if (!bIsInvisible)
+			{
+				// 非隐身和非无敌状态下游戏结束
+				GameOver();
+				if (SnakeManager)
+				{
+					SnakeManager->GameOver();
+				}
+				return;
+			}
 		}
 	}
 }

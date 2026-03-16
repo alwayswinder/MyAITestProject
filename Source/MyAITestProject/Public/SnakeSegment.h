@@ -10,8 +10,8 @@ UCLASS()
 class MYAITESTPROJECT_API ASnakeSegment : public AActor
 {
 	GENERATED_BODY()
-
-public:
+	
+public:	
 	ASnakeSegment();
 
 protected:

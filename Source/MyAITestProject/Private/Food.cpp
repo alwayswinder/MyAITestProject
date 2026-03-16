@@ -23,6 +23,7 @@ AFood::AFood()
 	AnimationTimer = 0.0f;
 	AnimationDuration = 0.5f;
 	BounceHeight = 150.0f;
+	FoodType = EFoodType::Normal;
 }
 
 void AFood::BeginPlay()
@@ -30,6 +31,7 @@ void AFood::BeginPlay()
 	Super::BeginPlay();
 	FindSnakeManager();
 	InitializeMesh();
+	RandomizeFoodType();
 	SpawnAtRandomLocation();
 }
 
@@ -59,14 +61,46 @@ void AFood::FindSnakeManager()
 	}
 }
 
+void AFood::RandomizeFoodType()
+{
+	int32 RandomIndex = FMath::RandRange(0, 9);
+	switch (RandomIndex)
+	{
+	case 0:
+	case 1:
+	case 2:
+	case 3:
+	case 4:
+	case 5:
+	case 6:
+		FoodType = EFoodType::Normal;
+		break;
+	case 7:
+		FoodType = EFoodType::Invisible;
+		break;
+	case 8:
+	case 9:
+		FoodType = EFoodType::Invincible;
+		break;
+	}
+	OnFoodTypeChanged.Broadcast(FoodType);
+}
+
 void AFood::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-	// 检查是否与蛇头碰撞（蛇头是Snake actor本身）
+	// 检查是否与蛇碰撞
 	ASnake* Snake = Cast<ASnake>(OtherActor);
+	if (!Snake && OtherActor)
+	{
+		// 如果OtherActor不是Snake，检查它的Owner
+		Snake = Cast<ASnake>(OtherActor->GetOwner());
+	}
+	
 	if (Snake && !bIsCollecting)
 	{
 		// 蛇吃到食物
 		Snake->EatFood();
+		Snake->ApplyFoodEffect(FoodType);
 
 		// 更新分数
 		if (SnakeManager)
@@ -113,6 +147,8 @@ void AFood::UpdateCollectAnimation(float DeltaTime)
 	if (AnimationProgress >= 1.0f)
 	{
 		bIsCollecting = false;
+		// 随机新的食物类型
+		RandomizeFoodType();
 		// 重新生成食物
 		SpawnAtRandomLocation();
 		// 重置变换
