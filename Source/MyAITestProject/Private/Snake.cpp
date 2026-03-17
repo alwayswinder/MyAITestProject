@@ -32,6 +32,8 @@ ASnake::ASnake()
 	bIsInvisible = false;
 	bIsInvincible = false;
 	EffectTimer = 0.0f;
+	CurrentDirection = FVector2D::ZeroVector;
+	PendingDirection = FVector2D::ZeroVector;
 	
 	// 设置默认边界距离
 	BoundaryDistanceX = 500.0f; // 默认左右各500单位
@@ -84,6 +86,7 @@ void ASnake::StartGame()
 
 	// 初始化方向
 	CurrentDirection = FVector2D(1, 0); // 初始向右移动
+	PendingDirection = CurrentDirection; // 初始待处理方向与当前方向一致
 	
 	// 重置加速状态
 	bIsBoosting = false;
@@ -104,10 +107,10 @@ void ASnake::StartGame()
 
 void ASnake::ChangeDirection(FVector2D NewDirection)
 {
-	// 防止蛇直接反向移动
+	// 防止蛇直接反向移动（使用CurrentDirection检查，因为蛇还没有移动）
 	if ((CurrentDirection.X + NewDirection.X) != 0 || (CurrentDirection.Y + NewDirection.Y) != 0)
 	{
-		CurrentDirection = NewDirection;
+		PendingDirection = NewDirection;
 	}
 }
 
@@ -217,6 +220,9 @@ void ASnake::Destroyed()
 
 void ASnake::MoveSnake()
 {
+	// 在移动前更新当前方向为待处理方向
+	CurrentDirection = PendingDirection;
+	
 	// 记录当前蛇头位置（Snake actor的位置）
 	FVector OldHeadLocation = GetActorLocation();
 	

@@ -12,3 +12,9 @@
 
 - 作为蛇的身体段
 - 提供可视化（StaticMeshComponent）
+
+## 可配置属性
+
+| 属性名 | 类型 | 说明 |
+|--------|------|------|
+| MeshComponent | UStaticMeshComponent* | 蛇身段的静态网格组件 |

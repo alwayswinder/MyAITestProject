@@ -94,6 +94,7 @@ private:
 	TArray<ASnakeSegment*> SnakeSegments;
 	
 	FVector2D CurrentDirection;
+	FVector2D PendingDirection;
 	FTimerHandle MoveTimerHandle;
 	ASnakeManager* SnakeManager;
 	float GridSize;
