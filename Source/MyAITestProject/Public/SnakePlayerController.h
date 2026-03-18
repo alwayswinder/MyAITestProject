@@ -46,4 +46,5 @@ private:
 	void OnMoveRightReleased();
 	
 	int32 PressedKeyCount;
+	FVector2D CurrentPressedDirection;
 };

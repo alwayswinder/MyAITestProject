@@ -34,6 +34,7 @@ ASnake::ASnake()
 	EffectTimer = 0.0f;
 	CurrentDirection = FVector2D::ZeroVector;
 	PendingDirection = FVector2D::ZeroVector;
+	LastMovedDirection = FVector2D::ZeroVector;
 	
 	// 设置默认边界距离
 	BoundaryDistanceX = 500.0f; // 默认左右各500单位
@@ -87,6 +88,7 @@ void ASnake::StartGame()
 	// 初始化方向
 	CurrentDirection = FVector2D(1, 0); // 初始向右移动
 	PendingDirection = CurrentDirection; // 初始待处理方向与当前方向一致
+	LastMovedDirection = CurrentDirection; // 初始上次移动方向与当前方向一致
 	
 	// 重置加速状态
 	bIsBoosting = false;
@@ -107,8 +109,8 @@ void ASnake::StartGame()
 
 void ASnake::ChangeDirection(FVector2D NewDirection)
 {
-	// 防止蛇直接反向移动（使用CurrentDirection检查，因为蛇还没有移动）
-	if ((CurrentDirection.X + NewDirection.X) != 0 || (CurrentDirection.Y + NewDirection.Y) != 0)
+	// 防止蛇直接反向移动（使用LastMovedDirection检查，因为这是蛇最后一次真正移动的方向）
+	if ((LastMovedDirection.X + NewDirection.X) != 0 || (LastMovedDirection.Y + NewDirection.Y) != 0)
 	{
 		PendingDirection = NewDirection;
 	}
@@ -271,6 +273,16 @@ void ASnake::MoveSnake()
 
 	// 检查碰撞
 	CheckCollision();
+
+	// 更新上次移动的方向
+	LastMovedDirection = CurrentDirection;
+
+	// 重新设置计时器，使用当前的移动速度
+	if (GetWorldTimerManager().IsTimerActive(MoveTimerHandle))
+	{
+		GetWorldTimerManager().ClearTimer(MoveTimerHandle);
+		GetWorldTimerManager().SetTimer(MoveTimerHandle, this, &ASnake::MoveSnake, CurrentMoveSpeed, true);
+	}
 }
 
 void ASnake::SpawnInitialSegments()
@@ -380,11 +392,8 @@ void ASnake::StartBoost()
 		bIsBoosting = true;
 		CurrentMoveSpeed = BoostMoveSpeed;
 		
-		if (GetWorldTimerManager().IsTimerActive(MoveTimerHandle))
-		{
-			GetWorldTimerManager().ClearTimer(MoveTimerHandle);
-			GetWorldTimerManager().SetTimer(MoveTimerHandle, this, &ASnake::MoveSnake, CurrentMoveSpeed, true);
-		}
+		// 不重置移动计时器，只修改移动速度
+		// 下一次移动会自动使用新的速度
 	}
 }
 
@@ -395,11 +404,8 @@ void ASnake::StopBoost()
 		bIsBoosting = false;
 		CurrentMoveSpeed = MoveSpeed;
 		
-		if (GetWorldTimerManager().IsTimerActive(MoveTimerHandle))
-		{
-			GetWorldTimerManager().ClearTimer(MoveTimerHandle);
-			GetWorldTimerManager().SetTimer(MoveTimerHandle, this, &ASnake::MoveSnake, CurrentMoveSpeed, true);
-		}
+		// 不重置移动计时器，只修改移动速度
+		// 下一次移动会自动使用新的速度
 	}
 }
 

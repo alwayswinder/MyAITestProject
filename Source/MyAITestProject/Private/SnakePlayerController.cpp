@@ -9,6 +9,7 @@ ASnakePlayerController::ASnakePlayerController()
 	// 设置默认属性
 	Snake = nullptr;
 	PressedKeyCount = 0;
+	CurrentPressedDirection = FVector2D::ZeroVector;
 }
 
 void ASnakePlayerController::BeginPlay()
@@ -41,6 +42,7 @@ void ASnakePlayerController::MoveUp()
 	if (Snake)
 	{
 		Snake->ChangeDirection(FVector2D(0, 1));
+		CurrentPressedDirection = FVector2D(0, 1);
 	}
 }
 
@@ -49,6 +51,7 @@ void ASnakePlayerController::MoveDown()
 	if (Snake)
 	{
 		Snake->ChangeDirection(FVector2D(0, -1));
+		CurrentPressedDirection = FVector2D(0, -1);
 	}
 }
 
@@ -57,6 +60,7 @@ void ASnakePlayerController::MoveLeft()
 	if (Snake)
 	{
 		Snake->ChangeDirection(FVector2D(1, 0));
+		CurrentPressedDirection = FVector2D(1, 0);
 	}
 }
 
@@ -65,6 +69,7 @@ void ASnakePlayerController::MoveRight()
 	if (Snake)
 	{
 		Snake->ChangeDirection(FVector2D(-1, 0));
+		CurrentPressedDirection = FVector2D(-1, 0);
 	}
 }
 
@@ -72,9 +77,21 @@ void ASnakePlayerController::HandleMovePressed(TFunction<void()> MoveFunc)
 {
 	MoveFunc();
 	PressedKeyCount++;
+	
+	// 如果是第一个按键，启动定时器
 	if (Snake && PressedKeyCount == 1)
 	{
-		Snake->StartBoost();
+		// 保存当前按下的方向
+		FVector2D PressedDirection = CurrentPressedDirection;
+		
+		// 启动定时器，0.2秒后检查是否依然按下
+		GetWorld()->GetTimerManager().SetTimerForNextTick([this, PressedDirection]() {
+			if (Snake && PressedKeyCount > 0 && CurrentPressedDirection == PressedDirection && PressedDirection == Snake->GetCurrentDirection())
+			{
+				// 如果依然按下且方向一致，进入加速状态
+				Snake->StartBoost();
+			}
+		});
 	}
 }
 
@@ -84,6 +101,20 @@ void ASnakePlayerController::HandleMoveReleased()
 	if (Snake && PressedKeyCount == 0)
 	{
 		Snake->StopBoost();
+	}
+	else if (Snake && PressedKeyCount > 0)
+	{
+		// 检查是否还有同方向的按键
+		if (CurrentPressedDirection == Snake->GetCurrentDirection())
+		{
+			// 如果还有同方向的按键，继续加速
+			Snake->StartBoost();
+		}
+		else
+		{
+			// 如果没有同方向的按键，停止加速
+			Snake->StopBoost();
+		}
 	}
 }
 

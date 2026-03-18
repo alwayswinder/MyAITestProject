@@ -48,6 +48,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Snake")
 	bool IsInvincible() const { return bIsInvincible; }
 
+	UFUNCTION(BlueprintCallable, Category = "Snake")
+	FVector2D GetCurrentDirection() const { return CurrentDirection; }
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Snake")
 	float MoveSpeed;
 
@@ -95,6 +98,7 @@ private:
 	
 	FVector2D CurrentDirection;
 	FVector2D PendingDirection;
+	FVector2D LastMovedDirection;
 	FTimerHandle MoveTimerHandle;
 	ASnakeManager* SnakeManager;
 	float GridSize;
