@@ -330,15 +330,27 @@ void ASnake::CheckCollision()
 		MaxY = SnakeLocation.Y + BoundaryDistanceY;
 	}
 
-	// 检查边界碰撞 - 任何状态下都检查
-	if (HeadLocation.X < MinX || HeadLocation.X > MaxX || HeadLocation.Y < MinY || HeadLocation.Y > MaxY)
+	// 处理屏幕环绕 - 边界穿越
+	if (HeadLocation.X < MinX)
 	{
-		GameOver();
-		if (SnakeManager)
-		{
-			SnakeManager->GameOver();
-		}
-		return;
+		HeadLocation.X = MaxX;
+		SetActorLocation(HeadLocation);
+	}
+	else if (HeadLocation.X > MaxX)
+	{
+		HeadLocation.X = MinX;
+		SetActorLocation(HeadLocation);
+	}
+	
+	if (HeadLocation.Y < MinY)
+	{
+		HeadLocation.Y = MaxY;
+		SetActorLocation(HeadLocation);
+	}
+	else if (HeadLocation.Y > MaxY)
+	{
+		HeadLocation.Y = MinY;
+		SetActorLocation(HeadLocation);
 	}
 
 	// 检查自身碰撞 - 隐身状态下不检查自身碰撞
