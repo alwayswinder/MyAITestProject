@@ -25,6 +25,9 @@ public:
 	void ChangeDirection(FVector2D NewDirection);
 
 	UFUNCTION(BlueprintCallable)
+	void ReleaseDirection();
+
+	UFUNCTION(BlueprintCallable)
 	void EatFood();
 
 	UFUNCTION(BlueprintCallable)
@@ -111,6 +114,12 @@ private:
 	bool bIsInvisible;
 	bool bIsInvincible;
 	float EffectTimer;
+	
+	// 方向长按加速相关变量
+	bool bIsDirectionPressed;
+	FVector2D PressedDirection;
+	float DirectionPressTimer;
+	const float BoostThreshold = 0.5f; // 长按0.5秒进入加速状态
 
 	void MoveSnake();
 	void SpawnInitialSegments();

@@ -36,6 +36,11 @@ ASnake::ASnake()
 	PendingDirection = FVector2D::ZeroVector;
 	LastMovedDirection = FVector2D::ZeroVector;
 	
+	// 初始化长按加速变量
+	bIsDirectionPressed = false;
+	PressedDirection = FVector2D::ZeroVector;
+	DirectionPressTimer = 0.0f;
+	
 	// 设置默认边界距离
 	BoundaryDistanceX = 500.0f; // 默认左右各500单位
 	BoundaryDistanceY = 500.0f; // 默认上下各500单位
@@ -51,6 +56,16 @@ void ASnake::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	UpdateEffects(DeltaTime);
+	
+	// 更新方向长按计时器
+	if (bIsDirectionPressed)
+	{
+		DirectionPressTimer += DeltaTime;
+		if (DirectionPressTimer >= BoostThreshold && !bIsBoosting)
+		{
+			StartBoost();
+		}
+	}
 }
 
 void ASnake::GetBoundaryFromManager()
@@ -113,6 +128,19 @@ void ASnake::ChangeDirection(FVector2D NewDirection)
 	if ((LastMovedDirection.X + NewDirection.X) != 0 || (LastMovedDirection.Y + NewDirection.Y) != 0)
 	{
 		PendingDirection = NewDirection;
+		
+		// 如果是新的方向按键按下，重置长按计时器
+		if (NewDirection != PressedDirection)
+		{
+			bIsDirectionPressed = true;
+			PressedDirection = NewDirection;
+			DirectionPressTimer = 0.0f;
+			// 如果之前在加速状态，松开方向后再按下新方向，先停止加速
+			if (bIsBoosting)
+			{
+				StopBoost();
+			}
+		}
 	}
 }
 
@@ -418,6 +446,19 @@ void ASnake::StopBoost()
 		
 		// 不重置移动计时器，只修改移动速度
 		// 下一次移动会自动使用新的速度
+	}
+}
+
+void ASnake::ReleaseDirection()
+{
+	bIsDirectionPressed = false;
+	PressedDirection = FVector2D::ZeroVector;
+	DirectionPressTimer = 0.0f;
+	
+	// 松开方向键后停止加速
+	if (bIsBoosting)
+	{
+		StopBoost();
 	}
 }
 
