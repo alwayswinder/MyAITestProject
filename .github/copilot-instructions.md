@@ -2,7 +2,10 @@
 
 ## Project Overview
 
-An **Unreal Engine 5.7** project that serves as a testbed for AI-to-editor automation via the **Model Context Protocol (MCP)**. The project hosts three plugins that bridge AI assistants (Claude, Cursor, etc.) to the Unreal Editor:
+An **Unreal Engine 5.7** C++ project with two purposes:
+
+1. **AI-to-Editor Automation** — Three plugins bridge AI assistants to the Unreal Editor via MCP (Model Context Protocol)
+2. **Snake Game** — A playable snake game module (`Source/MyAITestProject/`) used as a test target for AI-driven development
 
 | Plugin | Transport | Purpose |
 |--------|-----------|---------|
@@ -12,18 +15,22 @@ An **Unreal Engine 5.7** project that serves as a testbed for AI-to-editor autom
 
 ## Build
 
-This is a standard UE5 C++ project. There is no separate build script — use Unreal's native tooling:
+Standard UE5 C++ project — use Unreal's native tooling:
 
 - **Regenerate project files**: Right-click `MyAITestProject.uproject` → *Generate Visual Studio project files*
-- **Build**: Open `MyAITestProject.sln` in Visual Studio and build the `Development Editor` configuration
-- **Clean build** (required after plugin additions or persistent errors):
+- **Build**: Open `MyAITestProject.sln` in Visual Studio → build `Development Editor` (Win64)
+- **Clean build** (required after plugin additions or persistent `C1060`/`C3859` errors):
   ```
   Delete: Binaries/, Intermediate/, Saved/
   Then regenerate project files and rebuild
   ```
 
-The main game module uses `PCHUsage = UseExplicitOrSharedPCHs`.  
-`McpAutomationBridge` uses `PCHUsageMode.NoPCHs` to prevent heap exhaustion (`C1060`/`C3859`) caused by its 50+ handler files.
+No unit test harness is configured. No lint or CI scripts exist.
+
+### PCH Strategy
+- Main game module: `PCHUsage = UseExplicitOrSharedPCHs`
+- `McpAutomationBridge`: `PCHUsageMode.NoPCHs` (prevents compiler heap exhaustion from 50+ handler TUs)
+- `McpAutomationBridge` Build.cs dynamically detects system RAM and adjusts `/Zm` factor and parallel compilation (`/MP`) accordingly
 
 ## Architecture
 
@@ -52,11 +59,27 @@ MCP Client → HTTP/SSE → MCPServer → MCPRequestRouter
   → GameThreadDispatcher → UE5 Python API or service handlers
 ```
 
-Services live under `Source/SpecialAgent/Public/Services/`. Configuration is in `Config/DefaultSpecialAgent.ini`.
+Services are interface-based (`IMCPService`) and live under `Source/SpecialAgent/Public/Services/` (Asset, Foliage, Gameplay, Landscape, Lighting, Navigation, Performance, Python, Screenshot, Streaming, Utility, Viewport, World). Configuration is in `Config/DefaultSpecialAgent.ini`.
 
 ### AIBpAnalyze
 
 Lightweight editor plugin with toolbar commands. The `ai-tools/` directory contains reusable prompt scripts (`.md` files) and batch launchers (`.bat`) for AI-driven Blueprint and Material analysis tasks. Output goes to `ai-tools/ai-out/`.
+
+### Snake Game Module (`Source/MyAITestProject/`)
+
+Grid-based snake game with UMG UI. Key classes:
+
+| Class | Role |
+|-------|------|
+| `SnakeGameMode` | Sets controller, HUD, game flow |
+| `SnakeManager` | Spawns Snake/Food/Obstacles, owns game camera |
+| `Snake` | Head movement, collision, segment management |
+| `Food` | Three types: Normal (70%), Invisible (10%), Invincible (20%) |
+| `SnakeObstacle` | Spawned after each food pickup |
+| `SnakeHUD` | Creates/manages `SnakeMenuUI` and `SnakeGameUI` |
+| `SnakeSaveGame` | High-score persistence (top 10, slot "SnakeHighScores") |
+
+Game boundary uses wrap-around (snake exits one side, enters the other).
 
 ## Key Conventions (McpAutomationBridge)
 
@@ -102,6 +125,12 @@ Use `FJsonObjectConverter` for struct ↔ JSON serialization (UE standard).
 2. Implement in an appropriate `*Handlers.cpp` (or create a new one)
 3. Register the action string in `InitializeHandlers()` in `McpAutomationBridgeSubsystem.cpp`
 
+## Adding a New Service (SpecialAgentPlugin)
+
+1. Create a class implementing `IMCPService` under `Source/SpecialAgent/Public/Services/`
+2. Register it in the `MCPRequestRouter`
+3. All service calls are dispatched to the game thread via `GameThreadDispatcher`
+
 ## MCP Server Quick Reference
 
 | Server | Config | Health Check |
@@ -110,3 +139,10 @@ Use `FJsonObjectConverter` for struct ↔ JSON serialization (UE standard).
 | SpecialAgent | `Plugins/SpecialAgentPlugin-main/Config/DefaultSpecialAgent.ini` | `curl http://localhost:8767/health` |
 
 Both servers start automatically when the editor opens (disabled during commandlet/cook runs).
+
+## Anti-Patterns
+
+- **Modal Dialogs**: Avoid `UEditorAssetLibrary::SaveAsset()` on new assets (crashes D3D12)
+- **Hardcoded Paths**: Do not use absolute Windows paths in handlers
+- **Blocking Game Thread**: WebSocket frame processing must not block
+- **ANY_PACKAGE**: Deprecated since UE 5.1 — use `nullptr`
