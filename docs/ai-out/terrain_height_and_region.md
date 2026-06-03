@@ -14,21 +14,24 @@
 
 ```
 Step 1: 地形高度起伏
-  Python 生成6层hash-based value noise
+  Python 生成多层 hash-based value noise
   → 编码为 RG16 TGA (R=高8位, G=低8位)
   → import_file_as_texture2d 导入为瞬态纹理
   → 材质 TextureSample → Emissive (Unlit)
   → draw_material_to_render_target
   → landscape_import_heightmap_from_render_target(import_height_from_rg_channel=True)
 
-Step 2: 不规则活动区域
-  极坐标 + 正弦扰动生成连续闭合岛屿形状
-  → 写入 8-bit TGA (0=石头, 255=草地)
+Step 2: 不规则活动区域 + 自然过渡
+  2D FBM 噪声场（取代角度正弦波）生成有机海岸线形状
+  → signed distance + smoothstep 连续渐变（非二值 0/255）
+  → 噪声调制过渡带宽度（有的地方陡峭，有的地方平缓）
+  → 写入 8-bit 灰度 TGA (0=纯石头, 128=半过渡, 255=纯草地)
   → import_file_as_texture2d 导入
   → 材质 TextureSample → Emissive
   → 绘制到 R8 RT
   → landscape_import_weightmap_from_render_target("Grass") 为正相
-  → landscape_import_weightmap_from_render_target("Stone") 为反相
+  → OneMinus 反相材质 → landscape_import_weightmap_from_render_target("Stone")
+  → Grass + Stone 权重始终为 1.0
 ```
 
 ---
@@ -51,7 +54,7 @@ UE5 地形高度使用 **16-bit 精度**，数据以 R+G 双通道编码：
 ### 权重图导入
 
 ```
-landscape_proxy.landscape_import_weightmap_from_render_target(rt, layer_name)
+landscape.landscape_import_weightmap_from_render_target(rt, layer_name)
 ```
 
 - RT 格式：`RTF_R8`（单通道 8-bit）
@@ -64,13 +67,19 @@ landscape_proxy.landscape_import_weightmap_from_render_target(rt, layer_name)
 
 | 参数 | 默认值 | 含义 |
 |------|--------|------|
-| `W` / `H` | 2048 | 地形高度图分辨率 |
+| `W` / `H` | 由地形分辨率决定 | 地形高度图/权重图分辨率（本项目为 2160） |
 | `BASE_CELL` | 1024 | 噪声基础特征大小（越大起伏越舒展） |
 | `OCTAVES` | 4 | 噪声细节层数（越少越平滑） |
 | `AMPLITUDE` | 0.35 | 起伏幅度（1.0=全范围，0.35=温和起伏） |
 | `BASE_RADIUS` | 800 | 岛屿基础半径（控制活动区域大小） |
 | `EDGE_MARGIN` | 200 | 岛屿距地形边缘最小缓冲（像素） |
-| `WAVES` | 随机生成 | 4 层正弦波，每次运行随机振幅/频率/相位 |
+| `BOUNDARY_AMP` | 250 | 2D 噪声边界位移幅度（越大形状越不规则） |
+| `BOUNDARY_OCTAVES` | 5 | 边界噪声 FBM 层数 |
+| `BOUNDARY_CELL` | 300 | 边界噪声基础特征大小 |
+| `TRANSITION_BASE` | 160 | 基础过渡带宽（像素，越宽越柔和） |
+| `TRANSITION_NOISE_AMP` | 60 | 过渡带宽度噪声调制（有的地方陡峭有的平缓） |
+| `DETAIL_CELL` | 50 | 海岸线细节噪声特征大小 |
+| `DETAIL_AMP` | 20 | 海岸线细节噪声幅度 |
 
 ---
 
@@ -81,7 +90,7 @@ landscape_proxy.landscape_import_weightmap_from_render_target(rt, layer_name)
 ```python
 import math, os, unreal
 
-W = H = 2048
+W = H = 2160  # 须匹配地形实际分辨率（本项目 17×17 组件，每组件 127 quads → 2160）
 
 # ============================================================
 # 噪声函数
@@ -231,7 +240,26 @@ print("=== Step 1 complete! ===")
 
 ---
 
-## Step 2：不规则活动区域（岛屿）
+## Step 2：不规则活动区域（岛屿）+ 自然过渡
+
+### 设计思路
+
+第一版使用角度正弦波扰动 + 二值 mask（0/255），产生硬边界和几何感形状。
+改进版采用以下策略实现有机形状和自然过渡：
+
+1. **2D FBM 噪声取代角度正弦波** —— 真正的有机海岸线形状，无几何重复感
+2. **smoothstep 渐变替代二值阈值** —— 连续灰度值（0~255）产生平滑权重过渡
+3. **噪声调制过渡带宽度** —— 有的地方过渡陡峭，有的地方平缓，更自然
+4. **性能优化** —— 边界噪声在 1/4 分辨率预计算后双线性上采样，运算量降为 1/16
+
+```
+权重值编码：
+  255 = 纯草地（Grass=1.0, Stone=0.0）
+  128 = 半过渡（Grass=0.5, Stone=0.5）
+    0 = 纯石头（Grass=0.0, Stone=1.0）
+
+反相材质（OneMinus）自动保证 Grass + Stone ≡ 1.0
+```
 
 ### 完整脚本
 
@@ -239,59 +267,123 @@ print("=== Step 1 complete! ===")
 import math, random, os, unreal
 
 W = H = 2160  # 权重图分辨率（需匹配地形实际分辨率）
+cx, cy = W // 2, H // 2
+BASE_RADIUS = 800
+EDGE_MARGIN = 200
 
-# ============================================================
-# 生成不规则岛屿 mask
-# ============================================================
-cx, cy = W // 2, H // 2         # 岛屿中心
-BASE_RADIUS = 800                # 基础半径
-EDGE_MARGIN = 200                # 边缘缓冲（像素）
-
-# 随机化参数
 random.seed()
-NOISE_SEED = random.randint(0, 99999)
-WAVES = [
-    (random.uniform(120, 220), random.randint(2, 5), random.random() * 6.28),
-    (random.uniform(60, 120), random.randint(5, 10), random.random() * 6.28),
-    (random.uniform(30, 60), random.randint(10, 18), random.random() * 6.28),
-    (random.uniform(10, 30), random.randint(20, 30), random.random() * 6.28),
-]
+SEED = random.randint(0, 99999)
 
-def value_noise(x, y, cs, seed):
-    h = seed + int(x / cs) * 374761393 + int(y / cs) * 668265263
+def hash_noise(x, y, seed=0):
+    h = seed + x * 374761393 + y * 668265263
     h = (h ^ (h >> 13)) * 1274126177
     h = h ^ (h >> 16)
     return (h & 0x7fffffff) / 0x7fffffff
 
-print("=== Step 2: Generating island mask ===")
+def smoothstep(t):
+    return t * t * (3 - 2 * t)
+
+def lerp(a, b, t):
+    return a + (b - a) * t
+
+def value_noise(x, y, cell_size, seed=0):
+    fx, fy = x / cell_size, y / cell_size
+    ix, iy = int(math.floor(fx)), int(math.floor(fy))
+    sx = smoothstep(fx - ix)
+    sy = smoothstep(fy - iy)
+    return lerp(
+        lerp(hash_noise(ix, iy, seed), hash_noise(ix+1, iy, seed), sx),
+        lerp(hash_noise(ix, iy+1, seed), hash_noise(ix+1, iy+1, seed), sx), sy)
+
+def fbm_noise(x, y, octaves, base_cell, seed=0, lacunarity=2.0, gain=0.5):
+    """Fractal Brownian Motion — 多层有机噪声"""
+    val = 0.0
+    amp = 1.0
+    freq = 1.0
+    max_val = 0.0
+    for i in range(octaves):
+        val += amp * value_noise(x, y, base_cell / freq, seed + i * 1337)
+        max_val += amp
+        amp *= gain
+        freq *= lacunarity
+    return val / max_val
+
+def bilinear_sample(grid, x, y):
+    """双线性采样 2D 网格"""
+    w, h = len(grid[0]), len(grid)
+    x = max(0, min(w - 1.0001, x))
+    y = max(0, min(h - 1.0001, y))
+    ix, iy = int(x), int(y)
+    fx, fy = x - ix, y - iy
+    ix1, iy1 = min(ix + 1, w - 1), min(iy + 1, h - 1)
+    return lerp(
+        lerp(grid[iy][ix], grid[iy][ix1], fx),
+        lerp(grid[iy1][ix], grid[iy1][ix1], fx), fy)
+
+# ============================================================
+# 可调参数
+# ============================================================
+BOUNDARY_OCTAVES = 5      # 边界噪声细节层数
+BOUNDARY_CELL = 300       # 边界噪声基础特征大小（越小越曲折）
+BOUNDARY_AMP = 250        # 边界位移幅度（越大岛屿形状越不规则）
+TRANSITION_BASE = 160     # 基础过渡带宽（像素）
+TRANSITION_NOISE_AMP = 60 # 过渡带宽度噪声调制幅度
+DETAIL_CELL = 50          # 海岸线细节噪声特征大小
+DETAIL_AMP = 20           # 海岸线细节噪声幅度
+# ============================================================
+
+print("=== Step 2: Generating organic island mask ===")
+
+# Phase 1: 低分辨率预计算边界位移场（1/4 分辨率，大幅减少运算量）
+LOWRES = W // 4
+print(f"Pre-computing boundary noise at {LOWRES}x{LOWRES}...")
+displacement_low = [[0.0] * LOWRES for _ in range(LOWRES)]
+for y in range(LOWRES):
+    for x in range(LOWRES):
+        fx, fy = x * 4, y * 4
+        displacement_low[y][x] = (
+            fbm_noise(fx, fy, BOUNDARY_OCTAVES, BOUNDARY_CELL, SEED) - 0.5
+        ) * 2 * BOUNDARY_AMP
+
+# Phase 2: 全分辨率生成 mask（双线性上采样 + 细节噪声 + smoothstep 过渡）
+print("Generating full-res mask...")
 mask = bytearray(W * H)
 for y in range(H):
-    if y % 360 == 0:
+    if y % 540 == 0:
         print(f"  Row {y}/{H}")
     for x in range(W):
         dx, dy = x - cx, y - cy
         dist = math.hypot(dx, dy)
-        angle = math.atan2(dy, dx)
 
-        # 岛屿半径 = 基础半径 + 正弦扰动（产生不规则形状）
-        radius = BASE_RADIUS
-        for amp, freq, phase in WAVES:
-            radius += amp * math.sin(angle * freq + phase)
+        # 2D 有机边界位移（从低分辨率场双线性采样）
+        displacement = bilinear_sample(displacement_low, x / 4.0, y / 4.0)
 
-        # 海岸线噪声扰动
-        noise = (value_noise(x, y, 60, NOISE_SEED) - 0.5) * 30
+        # 小尺度海岸线细节
+        detail = (value_noise(x, y, DETAIL_CELL, SEED + 9999) - 0.5) * 2 * DETAIL_AMP
 
-        # 边缘惩罚：靠近边缘的距离被推远，保证纯石头缓冲带
+        effective_radius = BASE_RADIUS + displacement + detail
+
+        # 边缘惩罚：靠近地形边缘强制为石头
         edge_dist = min(x, y, W - 1 - x, H - 1 - y)
-        penalty = (1 - edge_dist / EDGE_MARGIN) * 500 if edge_dist < EDGE_MARGIN else 0
+        penalty = (1 - edge_dist / EDGE_MARGIN) * 400 if edge_dist < EDGE_MARGIN else 0
 
-        mask[y * W + x] = 255 if dist + penalty < radius + noise else 0
+        # 噪声调制过渡带宽度（有的地方陡峭，有的地方平缓）
+        tw_noise = value_noise(x, y, 200, SEED + 55555)
+        transition_w = TRANSITION_BASE + (tw_noise - 0.5) * 2 * TRANSITION_NOISE_AMP
+        transition_w = max(50, transition_w)
 
-# 统计覆盖率
-white = sum(1 for b in mask if b > 128)
-print(f"草地(岛屿): {white / W / H * 100:.1f}%  |  石头(海水): {100 - white / W / H * 100:.1f}%")
+        # 有符号距离 → smoothstep 连续渐变
+        signed_dist = effective_radius - (dist + penalty)
+        half_w = transition_w / 2.0
+        t = (signed_dist + half_w) / transition_w
+        t = max(0.0, min(1.0, t))
+        mask[y * W + x] = int(smoothstep(t) * 255)
 
-# 写入 8-bit TGA
+# 统计
+grass_weight = sum(b for b in mask) / 255.0
+print(f"Grass avg weight: {grass_weight / (W*H) * 100:.1f}%")
+
+# 写入 8-bit 灰度 TGA
 TGA_PATH = "province_mask.tga"
 with open(TGA_PATH, "wb") as f:
     f.write(bytearray([0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]))  # type=3 = grayscale
@@ -301,8 +393,10 @@ with open(TGA_PATH, "wb") as f:
     f.write(bytearray([0, 0, 0, 0, 0, 0, 0, 0]))
     f.write(b"TRUEVISION-XFILE.\0")
 
+print(f"TGA written: {TGA_PATH}")
+
 # ============================================================
-# 导入到 UE5 地形
+# 导入到 UE5 地形（须在同一执行上下文，防止瞬态纹理被 GC）
 # ============================================================
 world = unreal.EditorLevelLibrary.get_editor_world()
 
@@ -312,7 +406,7 @@ tex.set_editor_property("srgb", False)
 tex.set_editor_property("filter", unreal.TextureFilter.TF_BILINEAR)
 tex.modify(True)
 
-# 创建正相材质（mask → Grass）
+# 创建正相材质（mask → Grass 权重）
 mat = unreal.load_asset(name="/Game/_MyTest/Materials/M_ProvinceMask.M_ProvinceMask")
 if not mat:
     tools = unreal.AssetToolsHelpers.get_asset_tools()
@@ -328,7 +422,7 @@ mel.connect_material_expressions(tc, "", ts, "")
 mel.connect_material_property(ts, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
 mel.recompile_material(mat)
 
-# 渲染 Grass layer (mask 直接作为权重)
+# 渲染 Grass layer
 rt = unreal.RenderingLibrary.create_render_target2d(
     world, W, H,
     unreal.TextureRenderTargetFormat.RTF_R8,
@@ -337,12 +431,13 @@ rt = unreal.RenderingLibrary.create_render_target2d(
 )
 unreal.RenderingLibrary.draw_material_to_render_target(world, rt, mat)
 
-# 创建反相材质（1 - mask → Stone）
+# 创建反相材质（1 - mask → Stone 权重）
 mat_inv = unreal.load_asset(name="/Game/_MyTest/Materials/M_ProvinceMask_Inverted.M_ProvinceMask_Inverted")
 if not mat_inv:
     tools = unreal.AssetToolsHelpers.get_asset_tools()
     mat_inv = tools.create_asset("M_ProvinceMask_Inverted", "/Game/_MyTest/Materials",
                                   unreal.Material, unreal.MaterialFactoryNew())
+mat_inv.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
 mel.delete_all_material_expressions(mat_inv)
 tc2 = mel.create_material_expression(mat_inv, unreal.MaterialExpressionTextureCoordinate, -600, 0)
 ts2 = mel.create_material_expression(mat_inv, unreal.MaterialExpressionTextureSample, -400, 0)
@@ -353,7 +448,7 @@ mel.connect_material_expressions(ts2, "", om, "")
 mel.connect_material_property(om, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
 mel.recompile_material(mat_inv)
 
-# 渲染 Stone layer (1 - mask)
+# 渲染 Stone layer
 rt2 = unreal.RenderingLibrary.create_render_target2d(
     world, W, H,
     unreal.TextureRenderTargetFormat.RTF_R8,
@@ -369,20 +464,31 @@ for actor in unreal.EditorLevelLibrary.get_all_level_actors():
         landscape = actor
         break
 assert landscape, "No Landscape found!"
-proxy = unreal.LandscapeProxy.cast(landscape)
 
 # 导入权重图
-proxy.landscape_import_weightmap_from_render_target(rt, "Grass")
-proxy.landscape_import_weightmap_from_render_target(rt2, "Stone")
+landscape.landscape_import_weightmap_from_render_target(rt, "Grass")
+landscape.landscape_import_weightmap_from_render_target(rt2, "Stone")
 
-proxy.force_layers_full_update()
-proxy.modify()
+landscape.force_layers_full_update()
+landscape.modify()
 unreal.EditorLevelLibrary.save_current_level()
 
 # 清理
 os.remove(TGA_PATH)
 print("=== Step 2 complete! ===")
 ```
+
+### 调整指南
+
+| 参数 | 增大效果 | 减小效果 |
+|------|---------|---------|
+| `BOUNDARY_AMP` | 岛屿形状更不规则、曲折 | 更接近圆形 |
+| `BOUNDARY_CELL` | 边界大尺度弯曲更舒展 | 更细碎 |
+| `BOUNDARY_OCTAVES` | 边界细节层次更丰富 | 更平滑 |
+| `TRANSITION_BASE` | 草地→石头过渡更宽、更柔和 | 过渡更窄、更锐利 |
+| `TRANSITION_NOISE_AMP` | 过渡带宽窄变化更明显 | 过渡带宽度更均匀 |
+| `DETAIL_AMP` | 海岸线小尺度锯齿更强 | 边缘更平滑 |
+| `DETAIL_CELL` | 海岸线细节特征更大 | 细节更细密 |
 
 ---
 
@@ -434,7 +540,7 @@ ts.set_editor_property("texture", tex)  # 材质持有引用，防止 GC
 
 ### 陷阱3：高度图 RT 分辨率须匹配地形
 
-地形高度图分辨率（2048x2048）必须与噪声输出分辨率一致。
+地形高度图分辨率须与噪声输出分辨率一致。本项目为 2160×2160（17×17 组件，每组件 127 quads）。
 
 ### 陷阱4：不要用 AssetImportTask 导入纹理
 
@@ -479,7 +585,34 @@ tex.set_editor_property("filter", unreal.TextureFilter.TF_NEAREST)
 - [ ] **Step 1**：地形有明显起伏，平滑无块状
 - [ ] **Step 1**：`landscape_import_heightmap_from_render_target` 返回 True
 - [ ] **Step 2**：草地（Grass）在内部，石头（Stone）在外环绕
-- [ ] **Step 2**：岛屿边界不规则且连续（非模糊过渡）
+- [ ] **Step 2**：岛屿边界为连续渐变过渡（非硬边界），过渡带宽度自然变化
 - [ ] **Step 2**：草地不接触地形边缘（有纯石头缓冲带）
 - [ ] **Step 2**：两个 `landscape_import_weightmap_from_render_target` 均返回 True
-- [ ] 覆盖率：草地约 44%，石头约 56%（受随机参数轻微波动）
+- [ ] 草地平均权重约 44%（受随机种子轻微波动）
+- [ ] **Step 2**：Grass + Stone 权重在任意像素均为 1.0（OneMinus 反相保证）
+
+---
+
+## 执行记录
+
+### 2026-06-03 — 初始执行
+
+**环境：**
+- 关卡：`/Game/_MyTest/Map/M_AI_LevelCreate`
+- 地形：17×17 组件，每组件 127 quads，分辨率 2160×2160
+- 材质：`MI_LandscapeMasterMaterial`（含 Grass、Stone 图层参数）
+
+**Step 1 执行结果：** ✅ 通过
+- 参数：BASE_CELL=1024, OCTAVES=4, AMPLITUDE=0.35
+- `landscape_import_heightmap_from_render_target` → True
+- 执行时间：噪声生成 ~35s + UE 导入 ~3s
+
+**Step 2 执行结果：** ✅ 通过（经三轮迭代）
+- 第一版：角度正弦波 + 二值 mask → 硬边界，几何感强 ❌
+- 第二版：2D FBM 噪声 + smoothstep 80px 固定过渡带 → 仍不够自然 ❌
+- 第三版：2D FBM 噪声（1/4 低分辨率预计算 + 双线性上采样）+ smoothstep 160±60px 噪声调制过渡带 → 效果满意 ✅
+- 参数：BOUNDARY_AMP=250, BOUNDARY_OCTAVES=5, BOUNDARY_CELL=300, TRANSITION_BASE=160, TRANSITION_NOISE_AMP=60, DETAIL_CELL=50, DETAIL_AMP=20
+- 草地平均权重：44.7%，石头平均权重：55.3%
+- `landscape_import_weightmap_from_render_target("Grass")` → True
+- `landscape_import_weightmap_from_render_target("Stone")` → True
+- 执行时间：mask 生成 ~27s + UE 导入 ~5s

@@ -22,6 +22,8 @@
 
 现在我们需要将上一步得到的中心不规则区域分割为5个不同区域，
 我希望每个区域一样是不规则边界，像省内内部的不同地区一样，面积可以有差异，但不能过大；
+有什么好的方案吗？
+
 先思考能不能做到，
 然后思考是在上一步基础上实现简单，还是第一步就直接划分出五个区域简单。
 1.草地区域，基底本身的layer
@@ -29,3 +31,10 @@
 3.红色区域 /Script/Landscape.LandscapeLayerInfoObject'/Game/Orasot_Bundle/Maps/M_Global_Overview_sharedassets/Grass_Biom_3_LayerInfo.Grass_Biom_3_LayerInfo'
 4.污染区域 /Script/Landscape.LandscapeLayerInfoObject'/Game/Orasot_Bundle/Maps/M_Global_Overview_sharedassets/Grass_Biom_4_LayerInfo.Grass_Biom_4_LayerInfo'
 5.森林区域 /Script/Landscape.LandscapeLayerInfoObject'/Game/Orasot_Bundle/Maps/M_Global_Overview_sharedassets/Grass_Biom_2_LayerInfo.Grass_Biom_2_LayerInfo'
+
+
+草地 Grass
+黑色 Grass Biom 4
+红色 Grass Biom 3
+深绿 Grass Biom 2
+沙漠 DesertSand
