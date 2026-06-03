@@ -20,7 +20,7 @@
 第二步，在中心位置随机出不规则区域作为游戏真正的活动区域，
 保存在E:\Unreal\Projects\_FormGit\MyAITestProject\docs\ai-out
 
-现在我们需要将上一步得到的中心不规则区域分割为5个不同区域，
+现在我想将上一步得到的中心不规则区域分割为5个不同区域，
 我希望每个区域一样是不规则边界，像省内内部的不同地区一样，面积可以有差异，但不能过大；
 有什么好的方案吗？
 
@@ -32,9 +32,19 @@
 4.污染区域 /Script/Landscape.LandscapeLayerInfoObject'/Game/Orasot_Bundle/Maps/M_Global_Overview_sharedassets/Grass_Biom_4_LayerInfo.Grass_Biom_4_LayerInfo'
 5.森林区域 /Script/Landscape.LandscapeLayerInfoObject'/Game/Orasot_Bundle/Maps/M_Global_Overview_sharedassets/Grass_Biom_2_LayerInfo.Grass_Biom_2_LayerInfo'
 
-
+五个区域以及对应的地形材质layer name：
 草地 Grass
 黑色 Grass Biom 4
 红色 Grass Biom 3
 深绿 Grass Biom 2
 沙漠 DesertSand
+
+先尝试在红色区域生成一下植被：
+
+使用/Script/Engine.StaticMesh'/Game/Orasot_Bundle/Stylized_Landscape_5_Bioms/Biom_Bamboo/StaticMeshes/SM_Cliff_3.SM_Cliff_3'
+放大一倍，作为小岛的边缘围墙，包围小岛
+
+记录植被生成过程：
+第一步，小岛围墙；
+
+输出到一个新的文档中，保存在E:\Unreal\Projects\_FormGit\MyAITestProject\docs\ai-out
