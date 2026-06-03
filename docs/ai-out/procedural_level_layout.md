@@ -376,3 +376,377 @@ print(f"树木: {len(trees)} 棵")
 | 日期 | 种子 | 据点 | 路径 | 树木 | 耗时 |
 |------|------|------|------|------|------|
 | 2026-06-02 | 1780391390 | 30 | 39 | 2500 | ~49s |
+
+---
+
+# 附录：地形高度修改
+
+## 核心概念
+
+### RG16 编码原理
+
+UE5 地形高度使用 **16-bit 精度**，数据以 R+G 双通道编码存储在纹理中：
+
+```
+16-bit 高度值 (0~65535)
+  → 高8位 → R 通道 (landscape 读取为 high byte)
+  → 低8位 → G 通道 (landscape 读取为 low byte)
+  → landscape_import_heightmap_from_render_target(import_height_from_rg_channel=True)
+```
+
+如果只用单通道（R only），只有 256 级高度，地形会呈现**块状**阶梯。
+
+### 关键 API
+
+```python
+# 导入高度（RG双通道模式）
+landscape.landscape_import_heightmap_from_render_target(
+    rt, 
+    import_height_from_rg_channel=True,  # 关键！R=高8位, G=低8位
+    edit_layer_index=0
+)
+
+# 导出高度验证
+landscape.landscape_export_heightmap_to_render_target(
+    rt,
+    export_height_into_rg_channel=True,
+    export_landscape_proxies=False
+)
+```
+
+---
+
+## 方案一：材质生成噪声 → 地形（推荐，GPU 实时）
+
+参考材质：`/Game/_MyTest/Land/M_HeightNoise2.M_HeightNoise2`
+
+### 材质连线
+
+```
+WorldPosition → Add → Noise(VoronoiALU, scale=0.0005, levels=10) 
+    → Multiply(×13107=6553.5×2) 
+    → PackRG8Height("Height Int -32k to 32k") 
+    → Emissive Color
+```
+
+关键节点：
+- **PackRG8Height** 函数：`/Landmass/Landscape/BlueprintBrushes/MF/PackRG8Height.PackRG8Height`
+  - 输入：高度值（范围 -32768~32767）
+  - 输出：XY（编码后的 RG 通道）
+- **Offset 参数**：VectorParameter(R=200,G=100,B=100)，用于偏移 Noise 采样位置
+
+### 执行脚本
+
+```python
+import unreal
+
+W, H = 2048, 2048  # 必须匹配地形高度图分辨率
+world = unreal.EditorLevelLibrary.get_editor_world()
+
+# 1. 找地形
+landscape = None
+for actor in unreal.EditorLevelLibrary.get_all_level_actors():
+    if actor.get_class().get_name() == "Landscape":
+        landscape = actor
+        break
+assert landscape, "没找到地形"
+
+# 2. 加载材质
+mat = unreal.load_asset(name="/Game/_MyTest/Land/M_HeightNoise2.M_HeightNoise2")
+assert mat, "没找到材质"
+
+# 3. 创建 RT
+rt = unreal.RenderingLibrary.create_render_target2d(
+    world_context_object=world, width=W, height=H,
+    format=unreal.TextureRenderTargetFormat.RTF_RGBA16F,
+    clear_color=unreal.LinearColor(0.0, 0.0, 0.0, 1.0),
+    auto_generate_mip_maps=False
+)
+
+# 4. 材质渲染到 RT
+unreal.RenderingLibrary.draw_material_to_render_target(world, rt, mat)
+
+# 5. 写入地形（RG 双通道模式）
+result = landscape.landscape_import_heightmap_from_render_target(
+    rt, import_height_from_rg_channel=True, edit_layer_index=0
+)
+
+if result:
+    landscape.force_layers_full_update()
+    landscape.modify()
+    unreal.EditorLevelLibrary.save_current_level()
+    print("完成")
+```
+
+### 调整起伏强度
+
+修改材质中 Multiply 节点的值（当前 `6553.5 × 2 = 13107`）：
+- 增大 → 起伏更剧烈
+- 减小 → 起伏更平缓
+
+### 调整噪声频率
+
+修改 Noise 节点的参数：
+- `Scale`：增大 → 噪声更舒展（特征更大）
+- `Levels`：减少 → 细节更少，地形更平滑
+
+---
+
+## 方案二：Python 生成噪声 → TGA → 地形
+
+### 完整流程
+
+```
+Python 生成噪声 (6-octave value noise, hash-based)
+  → 每像素 16-bit 高度值
+  → 编码为 TGA (BGRA32, R=高8位, G=低8位)
+  → import_file_as_texture2d (瞬态纹理)
+  → 材质 (TextureSample → Emissive, Unlit)
+  → draw_material_to_render_target
+  → landscape_import_heightmap_from_render_target(import_height_from_rg_channel=True)
+```
+
+### 执行脚本
+
+> 注意：完整脚本分为两步，因为 noise 生成较慢（~50s），
+> 且 `import_file_as_texture2d` 创建的是瞬态纹理，材质和 RT 操作必须在同一次执行中完成。
+
+#### 第1步：生成噪声 + 写入 TGA
+
+```python
+import math, os
+
+W = H = 2048
+
+def hash_noise(x, y, seed=0):
+    h = seed + x * 374761393 + y * 668265263
+    h = (h ^ (h >> 13)) * 1274126177
+    h = h ^ (h >> 16)
+    return (h & 0x7fffffff) / 0x7fffffff
+
+def smoothstep(t):
+    return t * t * (3 - 2 * t)
+
+def lerp(a, b, t):
+    return a + (b - a) * t
+
+def value_noise(x, y, cell_size, seed=0):
+    fx = x / cell_size
+    fy = y / cell_size
+    ix = int(math.floor(fx))
+    iy = int(math.floor(fy))
+    frac_x = fx - ix
+    frac_y = fy - iy
+    sx = smoothstep(frac_x)
+    sy = smoothstep(frac_y)
+    v00 = hash_noise(ix, iy, seed)
+    v10 = hash_noise(ix+1, iy, seed)
+    v01 = hash_noise(ix, iy+1, seed)
+    v11 = hash_noise(ix+1, iy+1, seed)
+    return lerp(lerp(v00, v10, sx), lerp(v01, v11, sx), sy)
+
+# === 可调参数 ===
+BASE_CELL = 1024    # 基础特征大小（越大越舒展）
+OCTAVES = 4         # 细节层数（越少越平滑）
+OUT_TGA = "python_noise_height.tga"  # 输出到项目根目录
+# ================
+
+heights = [0] * (W * H)
+for y in range(H):
+    if y % 512 == 0:
+        print(f"Row {y}/{H}")
+    for x in range(W):
+        val = 0.0
+        amp = 1.0
+        freq = 1.0
+        max_amp = 0.0
+        for octave in range(OCTAVES):
+            cell = BASE_CELL / freq
+            val += amp * value_noise(x, y, cell, octave * 1337)
+            max_amp += amp
+            amp *= 0.5
+            freq *= 2.0
+        val = val / max_amp
+        heights[y * W + x] = int(val * 65535)
+
+# 写入 TGA（RG16 编码：R=高8位, G=低8位）
+with open(OUT_TGA, "wb") as f:
+    f.write(bytearray([0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0]))
+    f.write(bytearray([W & 0xFF, (W >> 8) & 0xFF, H & 0xFF, (H >> 8) & 0xFF]))
+    f.write(bytearray([32, 0x20]))  # 32-bit, top-left origin
+    for val in heights:
+        hi = (val >> 8) & 0xFF
+        lo = val & 0xFF
+        # TGA 像素顺序: B, G, R, A
+        f.write(bytearray([0, lo, hi, 255]))
+    f.write(bytearray([0, 0, 0, 0, 0, 0, 0, 0]))
+    f.write(b"TRUEVISION-XFILE.\0")
+
+print(f"TGA 已生成: {os.path.abspath(OUT_TGA)}")
+```
+
+#### 第2步：导入 TGA 并应用到地形
+
+```python
+import unreal, os
+
+W = H = 2048
+world = unreal.EditorLevelLibrary.get_editor_world()
+
+# 1. 导入 TGA（瞬态纹理，必须紧接着创建材质）
+tga_path = os.path.join(unreal.Paths.project_dir(), "python_noise_height.tga")
+tex = unreal.RenderingLibrary.import_file_as_texture2d(world, tga_path)
+tex.set_editor_property("srgb", False)
+tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_DISPLACEMENTMAP)
+tex.set_editor_property("filter", unreal.TextureFilter.TF_NEAREST)
+tex.modify(True)
+
+# 2. 创建/更新材质（必须在导入后立即执行，防止 GC）
+mat_path = "/Game/_MyTest/Materials/M_NoiseHeightmap.M_NoiseHeightmap"
+mat = unreal.load_asset(name=mat_path)  # 事先创建好的材质
+if not mat:
+    # 首次需要创建
+    tools = unreal.AssetToolsHelpers.get_asset_tools()
+    mat = tools.create_asset("M_NoiseHeightmap", "/Game/_MyTest/Materials", 
+                              unreal.Material, unreal.MaterialFactoryNew())
+mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+
+mel = unreal.MaterialEditingLibrary
+mel.delete_all_material_expressions(mat)
+tc = mel.create_material_expression(mat, unreal.MaterialExpressionTextureCoordinate, -400, 0)
+ts = mel.create_material_expression(mat, unreal.MaterialExpressionTextureSample, -200, 0)
+ts.set_editor_property("texture", tex)
+mel.connect_material_expressions(tc, "", ts, "")
+mel.connect_material_property(ts, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+mel.recompile_material(mat)
+unreal.EditorAssetLibrary.save_asset(mat_path, only_if_is_dirty=False)
+
+# 3. 渲染到 RT
+rt = unreal.RenderingLibrary.create_render_target2d(
+    world_context_object=world, width=W, height=H,
+    format=unreal.TextureRenderTargetFormat.RTF_RGBA16F,
+    clear_color=unreal.LinearColor(0.0, 0.0, 0.0, 1.0),
+    auto_generate_mip_maps=False
+)
+unreal.RenderingLibrary.draw_material_to_render_target(world, rt, mat)
+
+# 4. 找地形
+landscape = None
+for actor in unreal.EditorLevelLibrary.get_all_level_actors():
+    if actor.get_class().get_name() == "Landscape":
+        landscape = actor
+        break
+assert landscape, "没找到地形"
+
+# 5. 导入高度（RG 双通道模式）
+result = landscape.landscape_import_heightmap_from_render_target(
+    rt, import_height_from_rg_channel=True, edit_layer_index=0
+)
+assert result, "高度导入失败！"
+
+landscape.force_layers_full_update()
+landscape.modify()
+unreal.EditorLevelLibrary.save_current_level()
+print("完成！")
+```
+
+---
+
+## 方案三：外部 16-bit PNG 高度图 → 地形
+
+如需导入外部 16-bit PNG 高度图（如 Splat_04.PNG），核心思路同方案二：
+
+1. 将 PNG 转换为 RG16 TGA（R=高8位, G=低8位）
+2. 用 `import_file_as_texture2d` 导入
+3. 材质 passthrough → RT → 地形
+
+关键区别：不需要自己生成噪声，而是从 PNG 读取像素数据。
+
+> 注意：直接导入 16-bit PNG 到 UE 不会保留 16-bit 精度（UE 的 PNG 导入器会转换为 8-bit）。
+> 必须先用 Python 读取 16-bit PNG，编码为 RG16 TGA 再导入。
+
+---
+
+## 常见陷阱
+
+### 陷阱1：纹理是瞬态的，会被 GC
+
+```python
+# ❌ 错误：分段执行
+tex = import_file_as_texture2d(...)  # 瞬态纹理
+# ... 其他代码（GC 可能回收 tex）
+create_material(tex)  # tex 可能已失效
+
+# ✅ 正确：导入后立即创建材质引用
+tex = import_file_as_texture2d(...)
+ts = MaterialExpressionTextureSample()
+ts.set_editor_property("texture", tex)  # 材质持有引用，防止 GC
+```
+
+### 陷阱2：不要用 Canvas 绘制高度数据
+
+```python
+# ❌ 错误：Canvas.draw_texture 会应用 sRGB/gamma 校正，破坏高度数据
+# ✅ 正确：draw_material_to_render_target 保持线性值
+```
+
+### 陷阱3：RT 分辨率必须匹配地形
+
+地形高度图分辨率必须精确匹配，否则数据会拉伸/挤压。可通过以下方式获取地形分辨率：
+
+```python
+components = landscape.get_components_by_class(unreal.LandscapeComponent)
+section_bases = [(comp.section_base_x, comp.section_base_y) for comp in components]
+xs = sorted(set(b[0] for b in section_bases))
+section_size = xs[1] - xs[0]
+total_quads = (max(xs) - min(xs)) + section_size
+RT_SIZE = total_quads + 1
+```
+
+### 陷阱4：不要用 AssetImportTask 导入纹理
+
+```python
+# ❌ 会导致 UE 编辑器崩溃！
+task = unreal.AssetImportTask()
+task.set_editor_property("filename", tga_path)
+...
+tools.import_asset_tasks([task])
+
+# ✅ 使用 import_file_as_texture2d（瞬态但稳定）
+tex = unreal.RenderingLibrary.import_file_as_texture2d(world, tga_path)
+```
+
+### 陷阱5：纹理压缩会破坏高度数据
+
+```python
+tex.set_editor_property("srgb", False)
+tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_DISPLACEMENTMAP)
+tex.set_editor_property("filter", unreal.TextureFilter.TF_NEAREST)
+```
+
+---
+
+## API 参考（地形高度）
+
+| API | 用途 |
+|-----|------|
+| `landscape_import_heightmap_from_render_target(rt, import_height_from_rg_channel, edit_layer_index)` | 从 RT 导入高度图 |
+| `import_height_from_rg_channel=True` | RG 双通道 16-bit 模式（必须） |
+| `import_height_from_rg_channel=False` | 单通道 8-bit 模式（不要用，会块状） |
+| `landscape_export_heightmap_to_render_target(rt, export_height_into_rg_channel, export_landscape_proxies)` | 导出高度图用于验证 |
+| `draw_material_to_render_target(world, rt, material)` | 材质渲染到 RT（保持线性值） |
+| `import_file_as_texture2d(world, path)` | 导入图片为瞬态纹理 |
+| `PackRG8Height` 材质函数 | 编码高度为 RG16（位于 Landmass 插件） |
+| `MaterialFunctionCall.material_function` | 设置函数调用目标 |
+
+---
+
+## 复现验证清单
+
+运行脚本后检查：
+
+- [ ] 地形有明显起伏（非平面）
+- [ ] 起伏平滑无块状（非阶梯状）
+- [ ] RT 验证时 R 和 G 通道均有非零变化值
+- [ ] `landscape_import_heightmap_from_render_target` 返回 True
+- [ ] 地形 Z 范围与世界范围比例协调（不极端不过平）
