@@ -611,6 +611,22 @@ tex.set_editor_property("filter", unreal.TextureFilter.TF_NEAREST)
 
 ## Step 3：岛屿内部 5 区域分割
 
+> **⚠️ 执行前必查：** 地形分辨率可能已变化！先运行以下代码确认当前实际分辨率，再将 `W`/`H` 设为该值：
+> ```python
+> # 查当前地形分辨率（在 UE Python 中执行）
+> import unreal
+> landscape = next(a for a in unreal.EditorLevelLibrary.get_all_level_actors()
+>                  if a.get_class().get_name() == "Landscape")
+> comps = landscape.get_components_by_class(unreal.LandscapeComponent)
+> bases = [(c.get_editor_property("section_base_x"), c.get_editor_property("section_base_y")) for c in comps]
+> xs = sorted(set(b[0] for b in bases))
+> section_size = xs[1] - xs[0]
+> total_quads = (max(xs) - min(xs)) + section_size
+> W = H = total_quads + 1
+> print(f"Resolution: {W}x{H}")
+> ```
+> 然后将脚本首行的 `W = H = 2160` 替换为实际值。**切记**：`LOWRES` 须用 `(W + 3) // 4`（向上取整），不能用 `W // 4`，否则非 4 的倍数分辨率会因 `upsample` 缺少末行/末列导致 `IndexError`。
+
 ### 设计思路
 
 将 Step 2 生成的岛屿进一步分割为 5 个不规则区域，类似国家内部的省份划分。采用 **Lloyd 松弛 + 噪声调制 Voronoi 图** 算法。
@@ -623,8 +639,9 @@ tex.set_editor_property("filter", unreal.TextureFilter.TF_NEAREST)
 
 **Lloyd + 噪声 Voronoi 的优势：**
 1. **Lloyd 迭代**：每轮将种子点移到区域质心，3 轮即可将面积差异控制在 1.7x 以内
-2. **FBM 噪声扭曲距离**：每个种子点有独立的噪声偏移量，5 条边界各有独特的不规则弯曲
+2. **独立噪声场（优化）**：每个站点拥有独立 seed 的 FBM 噪声场（非共享噪声场的不同偏移采样），完全消除相邻站点间噪声值相关性，边界扭曲效果最大化
 3. **smoothstep 软过渡**：区域间 60~120px 渐变，消除硬边锯齿感
+4. **过渡带宽度噪声调制（优化）**：复用 Step 2 已验证策略，噪声扰动过渡带宽度（`TRANSITION_NOISE_AMP`），有的地方陡峭有的地方平缓，避免所有边界均匀一致
 
 **权重编码：**
 ```
@@ -641,9 +658,9 @@ Stone = 1 - island_mask（保持 Step 2 的岛屿外石头覆盖）
 ```python
 import math, random, os
 
-W = H = 2160
+W = H = 2160  # ⚠️ 执行前须确认实际分辨率！参见上方"执行前必查"
 cx, cy = W // 2, H // 2
-LOWRES = W // 4  # 540，噪声场预计算分辨率
+LOWRES = (W + 3) // 4  # 向上取整，防止非 4 倍数分辨率 IndexError
 
 # ============================================================
 # 噪声函数（复用 Step 2）
@@ -683,13 +700,13 @@ def bilinear_sample(grid, x, y):
     ix1, iy1 = min(ix + 1, w - 1), min(iy + 1, h - 1)
     return lerp(lerp(grid[iy][ix], grid[iy][ix1], fx), lerp(grid[iy1][ix], grid[iy1][ix1], fx), fy)
 
-def upsample(low_grid, scale):
-    """低分辨率网格双线性上采样到全分辨率"""
+def upsample(low_grid, scale, out_w, out_h):
+    """低分辨率网格双线性上采样到指定输出尺寸"""
     lw, lh = len(low_grid[0]), len(low_grid)
-    result = [0.0] * (lw * scale * lh * scale)
-    for y in range(lh * scale):
-        for x in range(lw * scale):
-            result[y * lw * scale + x] = bilinear_sample(low_grid, x / scale, y / scale)
+    result = [0.0] * (out_w * out_h)
+    for y in range(out_h):
+        for x in range(out_w):
+            result[y * out_w + x] = bilinear_sample(low_grid, x / scale, y / scale)
     return result
 
 def write_tga_grayscale(path, data, w, h):
@@ -712,7 +729,7 @@ BOUNDARY_OCTAVES = 5
 BOUNDARY_CELL = 300
 BOUNDARY_AMP = 250
 TRANSITION_BASE = 160
-TRANSITION_NOISE_AMP = 60
+TRANSITION_NOISE_AMP_ISLAND = 60
 DETAIL_CELL = 50
 DETAIL_AMP = 20
 
@@ -722,16 +739,21 @@ REGION_SEED = 12345        # 区域种子点随机种子
 NOISE_AMP = 80             # 区域边界噪声幅度（越大边界越不规则）
 NOISE_CELL = 50            # 边界噪声特征尺寸
 NOISE_OCTAVES = 3          # 边界噪声 FBM 层数
-REGION_TRANSITION = 120    # 区域间过渡带宽度（像素，越大越柔和）
+REGION_TRANSITION = 120    # 区域间过渡带基础宽度（像素，越大越柔和）
+
+# 优化：过渡带宽度噪声调制（让边界软硬有自然变化）
+TRANSITION_NOISE_AMP = 40  # 过渡带宽度噪声调制幅度（±40px）
+TRANSITION_CELL = 200      # 过渡带宽度噪声特征尺寸
 # ============================================================
 
-print(f"REGION_TRANSITION = {REGION_TRANSITION}")
+print(f"W={W}, H={H}, LOWRES={LOWRES}")
+print(f"REGION_TRANSITION={REGION_TRANSITION}, TRANSITION_NOISE_AMP={TRANSITION_NOISE_AMP}")
 
 # ============================================================
 # Phase 0: 重建岛屿 mask（低分辨率 + 上采样，速度快）
 # ============================================================
 print("=== Phase 0: Island mask (lowres + upsample) ===")
-# 边界位移场：540×540
+# 边界位移场：LOWRES×LOWRES
 disp_low = [[0.0] * LOWRES for _ in range(LOWRES)]
 for y in range(LOWRES):
     for x in range(LOWRES):
@@ -740,7 +762,7 @@ for y in range(LOWRES):
             fbm_noise(fx, fy, BOUNDARY_OCTAVES, BOUNDARY_CELL, ISLAND_SEED) - 0.5
         ) * 2 * BOUNDARY_AMP
 
-# 岛屿 mask：540×540
+# 岛屿 mask：LOWRES×LOWRES
 island_low = [0.0] * (LOWRES * LOWRES)
 for y in range(LOWRES):
     for x in range(LOWRES):
@@ -753,24 +775,36 @@ for y in range(LOWRES):
         edge_dist = min(fx, fy, W - 1 - fx, H - 1 - fy)
         penalty = (1 - edge_dist / EDGE_MARGIN) * 400 if edge_dist < EDGE_MARGIN else 0
         tw_noise = value_noise(fx, fy, 200, ISLAND_SEED + 55555)
-        transition_w = max(50, TRANSITION_BASE + (tw_noise - 0.5) * 2 * TRANSITION_NOISE_AMP)
+        transition_w = max(50, TRANSITION_BASE + (tw_noise - 0.5) * 2 * TRANSITION_NOISE_AMP_ISLAND)
         signed_dist = effective_radius - (dist + penalty)
         t = max(0.0, min(1.0, (signed_dist + transition_w / 2.0) / transition_w))
         island_low[y * LOWRES + x] = smoothstep(t)
 
-# 上采样到 2160×2160
+# 上采样到 W×H
 island_low_2d = [[island_low[y * LOWRES + x] for x in range(LOWRES)] for y in range(LOWRES)]
-island_mask = upsample(island_low_2d, 4)
+island_mask = upsample(island_low_2d, 4, W, H)
 print(f"Island avg weight: {sum(island_mask) / (W*H) * 100:.1f}%")
 
 # ============================================================
-# Phase 1: 区域噪声场预计算（540×540）
+# Phase 1: 独立噪声场（每个站点独立 FBM，各自不同 seed）+ 过渡带噪声场
 # ============================================================
-print("=== Phase 1: Region noise field ===")
-noise_field = [[0.0] * LOWRES for _ in range(LOWRES)]
+print("=== Phase 1: Independent noise fields per site ===")
+noise_fields = []
+for i in range(NUM_REGIONS):
+    field = [[0.0] * LOWRES for _ in range(LOWRES)]
+    seed_i = REGION_SEED + i * 7777
+    for y in range(LOWRES):
+        for x in range(LOWRES):
+            field[y][x] = fbm_noise(x * 4, y * 4, NOISE_OCTAVES, NOISE_CELL, seed_i)
+    noise_fields.append(field)
+    print(f"  Noise field {i} (seed={seed_i})")
+
+# 过渡带宽度噪声场
+trans_noise_field = [[0.0] * LOWRES for _ in range(LOWRES)]
 for y in range(LOWRES):
     for x in range(LOWRES):
-        noise_field[y][x] = fbm_noise(x * 4, y * 4, NOISE_OCTAVES, NOISE_CELL, REGION_SEED)
+        trans_noise_field[y][x] = fbm_noise(x * 4, y * 4, 3, TRANSITION_CELL, REGION_SEED + 99999)
+print("  Transition noise field done")
 
 # ============================================================
 # Phase 2: 采样初始种子点（岛屿内部，间距 > 200px）
@@ -795,7 +829,7 @@ for _ in range(NUM_REGIONS):
     print(f"  Site {len(sites)-1}: {sites[-1]}")
 
 # ============================================================
-# Phase 3: Lloyd 松弛（3 轮，stride=4 加速）
+# Phase 3: Lloyd 松弛（3 轮，stride=4 加速，每个站点采样自己的独立噪声场）
 # ============================================================
 print("=== Phase 3: Lloyd relaxation ===")
 for iteration in range(3):
@@ -814,9 +848,8 @@ for iteration in range(3):
             for i in range(NUM_REGIONS):
                 dx, dy = x - sites[i][0], y - sites[i][1]
                 euclidean = math.sqrt(dx*dx + dy*dy)
-                nx = (x + i * 713 + REGION_SEED) % (LOWRES * 4)
-                ny = (y + i * 371 + REGION_SEED) % (LOWRES * 4)
-                noise = bilinear_sample(noise_field, nx / 4.0, ny / 4.0)
+                # 每个站点从自己的独立噪声场采样（消除相关性）
+                noise = bilinear_sample(noise_fields[i], x / 4.0, y / 4.0)
                 modulated = euclidean + (noise - 0.5) * 2.0 * NOISE_AMP
                 if modulated < best_dist:
                     best_dist = modulated
@@ -843,7 +876,6 @@ print(f"Final sites: {sites}")
 # Phase 4: 单次遍历生成全部 5 区域 + Stone 权重图
 # ============================================================
 print("=== Phase 4: Generating weightmaps (single pass) ===")
-HALF_W = REGION_TRANSITION / 2.0
 region_data = [bytearray(W * H) for _ in range(NUM_REGIONS)]
 stone_data = bytearray(W * H)
 
@@ -860,14 +892,18 @@ for y in range(H):
                 region_data[r][idx] = 0
             continue
         
-        # 计算到 5 个站点的噪声调制距离
+        # 噪声调制过渡带宽度（每个像素不同，有的地方陡峭有的平缓）
+        tn = bilinear_sample(trans_noise_field, x / 4.0, y / 4.0)
+        transition_w = REGION_TRANSITION + (tn - 0.5) * 2.0 * TRANSITION_NOISE_AMP
+        transition_w = max(60, transition_w)
+        half_w = transition_w / 2.0
+        
+        # 计算到 5 个站点的噪声调制距离（每个站点独立噪声场）
         dists = []
         for i in range(NUM_REGIONS):
             dx, dy = x - sites[i][0], y - sites[i][1]
             euclidean = math.sqrt(dx*dx + dy*dy)
-            nx = (x + i * 713 + REGION_SEED) % (LOWRES * 4)
-            ny = (y + i * 371 + REGION_SEED) % (LOWRES * 4)
-            noise = bilinear_sample(noise_field, nx / 4.0, ny / 4.0)
+            noise = bilinear_sample(noise_fields[i], x / 4.0, y / 4.0)
             dists.append(euclidean + (noise - 0.5) * 2.0 * NOISE_AMP)
         
         # 最近（winner）和次近（runner-up）
@@ -876,13 +912,13 @@ for y in range(H):
         
         # smoothstep 软过渡
         signed_dist = dists[runner_up] - dists[winner]
-        t = max(0.0, min(1.0, (signed_dist + HALF_W) / REGION_TRANSITION))
+        t = max(0.0, min(1.0, (signed_dist + half_w) / transition_w))
         winner_weight = smoothstep(t)
         
         for r in range(NUM_REGIONS):
             if r == winner:
                 region_data[r][idx] = int(winner_weight * island_w * 255)
-            elif r == runner_up and signed_dist < HALF_W:
+            elif r == runner_up and signed_dist < half_w:
                 region_data[r][idx] = int((1.0 - winner_weight) * island_w * 255)
             else:
                 region_data[r][idx] = 0
@@ -968,7 +1004,17 @@ print("=== Step 3 complete! ===")
 | `NOISE_CELL` | 边界大尺度弯曲更舒展 | 更细碎 |
 | `NOISE_OCTAVES` | 边界细节层次更丰富 | 更平滑 |
 | `REGION_TRANSITION` | 区域间过渡更宽、更柔和 | 更接近硬边界 |
+| `TRANSITION_NOISE_AMP` | 过渡带宽窄变化更明显 | 过渡带宽度更均匀 |
+| `TRANSITION_CELL` | 过渡带宽度变化更舒展 | 更细碎 |
 | 种子点数量 | 区域数更多 | 区域数更少 |
+
+### 优化说明
+
+与最初版本相比，当前版本有两项关键优化：
+
+1. **独立噪声场（核心优化）**：旧版使用单一共享 `noise_field`，5 个站点通过不同偏移采样——但 FBM 噪声连续，相邻采样点高度相关，扭曲效果彼此抵消。新版每个站点拥有独立 seed 的 FBM 噪声场（`noise_fields[i]`，各自 seed），相邻站点距离被完全不相关的噪声值扭曲，边界不规则度显著提升。
+
+2. **过渡带宽度噪声调制**：旧版 `REGION_TRANSITION` 为固定值，所有边界软硬一致，视觉效果过于"均匀"。新版引入 `trans_noise_field`，每像素独立计算过渡带宽度 `REGION_TRANSITION ± TRANSITION_NOISE_AMP`，模拟自然地貌中有的边界陡峭、有的平缓。
 
 ### 区域 → 图层映射
 
@@ -1017,3 +1063,32 @@ print("=== Step 3 complete! ===")
 - 面积比（最大/最小）：1.7x
 - 全部 6 层 `landscape_import_weightmap_from_render_target` → True
 - 执行时间：计算 ~32s + UE 导入 ~10s
+
+### 2026-06-03 — Step 3 优化（独立噪声场 + 过渡带调制）
+
+**背景：** 旧版区域边界不如外部海岸线自然——原因：
+1. 所有站点共享单一 `noise_field`，不同偏移采样在相邻位置噪声值高度相关，扭曲效果抵消
+2. 过渡带宽度 `REGION_TRANSITION` 为固定值，所有边界软硬均匀，缺乏自然变化
+
+**优化：**
+1. **独立噪声场**：每个站点生成独立 FBM 噪声场（5 个不同 seed），完全消除相邻站点间噪声相关性
+2. **过渡带宽度噪声调制**：新增 `trans_noise_field`，每像素过渡带宽度在 `REGION_TRANSITION ± TRANSITION_NOISE_AMP` 范围内变化
+
+**执行环境：** 地形 1513×1513（24×24 组件，每组件 63 quads）
+
+**参数：** 按 1513/2160≈0.7 缩放：
+BASE_RADIUS=560, EDGE_MARGIN=140, BOUNDARY_CELL=210, BOUNDARY_AMP=175,
+TRANSITION_BASE=112, TRANSITION_NOISE_AMP_ISLAND=42, DETAIL_CELL=35, DETAIL_AMP=14,
+NOISE_AMP=56, NOISE_CELL=35, NOISE_OCTAVES=3, REGION_TRANSITION=84,
+TRANSITION_NOISE_AMP=28, TRANSITION_CELL=140
+
+**执行结果：** ✅ 通过
+- 岛屿平均权重：42.0%
+- 区域面积分布：Grass 5.9%, Grass Biom 4 9.3%, Grass Biom 3 8.2%, Grass Biom 2 10.9%, DesertSand 7.7%
+- 面积比（最大/最小）：1.85x
+- 全部 6 层 `landscape_import_weightmap_from_render_target` → True
+- 区域边界过渡与外圈海岸线自然度一致
+- 执行时间：计算 ~25s + UE 导入 ~10s（1513×1513，比 2160² 约一半像素数）
+- 脚本可靠性改进：`LOWRES = (W + 3) // 4`（向上取整），`upsample()` 接受 `out_w`/`out_h` 参数，防止非 4 倍数分辨率 `IndexError`
+
+### 2026-06-03 — 初始执行（2160×2160，已废弃）
